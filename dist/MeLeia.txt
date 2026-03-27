@@ -1,0 +1,45 @@
+Este software é um facilitador de fluxo de trabalho, desenvolvido para atuar como uma camada de padronização entre os dados brutos do PDM (CSV) e a produção final. O objetivo é automatizar a triagem e formatação, permitindo que a engenharia foque na revisão estratégica e nas exceções de montagem.
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Como usar (Passo a Passo)
+Copie os dados: No CSV gerado pelo PDM, selecione a tabela desejada e copie (Ctrl + C).
+
+Abra o Gerador: Execute o arquivo Gerador_Planilhas_Ingecon.exe.
+
+Processamento: Clique no botão "Colar - Gerar Planilhas".
+
+Resultado: Uma pasta chamada PlanilhasGeradas será aberta automaticamente com os arquivos Excel prontos para uso.
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Filosofia do Sistema: Assistente de Integridade
+O software não substitui o julgamento humano, mas elimina o trabalho repetitivo e o erro de digitação.
+
+O "Core" (Coração): O cálculo de quantidades, validação de códigos (11 e 15) e a estrutura principal de marcenaria estão 100% validados.
+
+Filtragem de Engenharia: O sistema ignora automaticamente itens que não pertencem ao corte (Ferragens/Acessórios com MP 92, 9172 ou 93).
+
+Tratamento de Descrições: Devido à natureza variável dos cadastros, o sistema busca separar "Material" de "Descrição" via heurística (buscando por " - ", "REF." ou medidas).
+
+Regra de Integridade: Em casos de extrema inconsistência, o sistema mantém o dado integral na coluna de Descrição para evitar perda de informação.
+
+Ajuste de Formatação: Devido à falta de um padrão rigoroso em todos os cadastros originais, algumas informações podem apresentar pequenos desalinhamentos estéticos em cenários muito específicos.
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Limites de Teste & Evolução
+Foram testadas diversas hipóteses de dados, mas como a variedade no sistema é imensa, novos cenários podem surgir. A tecnologia serve como base, mas a experiência humana tem a liberdade final para lidar com o que é excepcional ou fora da curva.
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Suporte e Feedback
+Erro / Bug: Se o programa fechar ou gerar um dado divergente, me avise imediatamente.
+
+Sugestões: Ideias para novas funções ou melhorias no filtro são muito bem-vindas.
+
+Dúvidas: Se não entendeu por que um dado foi para uma coluna específica, eu te explico a lógica aplicada.
+
+Contato:
+💬 Microsoft Teams: Gabriel Furlan Tiara
+📍 Presencial: Só me chamar na minha mesa!
