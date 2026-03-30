@@ -10,6 +10,11 @@ from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from copy import copy
 from openpyxl.styles import Font, Alignment
+
+# Importações para formatação mista (Rich Text) na mesma célula
+from openpyxl.cell.text import InlineFont
+from openpyxl.cell.rich_text import TextBlock, CellRichText
+
 import tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox
@@ -17,7 +22,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE
 # =============================
-VERSAO_ATUAL = "2.0.6"
+VERSAO_ATUAL = "2.0.12"
 
 SERVIDOR = Path(r"X:\Engenharia\GeradorPlanilhas")
 ARQ_VERSAO = SERVIDOR / "version.txt"
@@ -150,28 +155,40 @@ class AppIngecon(ctk.CTk):
         return re.sub(r'\s+', ' ', t).strip(' -')
 
     def ajustar_molde_elastico(self, ws, num_itens):
-        padrao, l_rodape = 3, 9
-        mesclagens, quadro = [], None
+        padrao = 3
+        l_rodape = 9
+        quadro = None
+        
         for m in list(ws.merged_cells.ranges):
             if m.min_row >= l_rodape:
-                if m.min_row == 9: quadro = {'min_col': m.min_col, 'max_col': m.max_col, 'max_row': m.max_row}
-                else: mesclagens.append({'min_row': m.min_row, 'max_row': m.max_row, 'min_col': m.min_col, 'max_col': m.max_col})
+                if m.min_row == l_rodape: 
+                    quadro = {'min_col': m.min_col, 'max_col': m.max_col, 'max_row': m.max_row}
                 ws.unmerge_cells(str(m))
-        diff = max(0, num_itens - padrao)
-        if diff > 0: ws.insert_rows(l_rodape, diff)
-        for r in range(6, ws.max_row + 1):
+        
+        if quadro and quadro['max_row'] > l_rodape:
+            ws.delete_rows(l_rodape + 1, quadro['max_row'] - l_rodape)
+                
+        diff = num_itens - padrao
+        
+        if diff > 0:
+            ws.insert_rows(l_rodape, diff)
+        elif diff < 0:
+            ws.delete_rows(l_rodape + diff, abs(diff))
+            
+        for r in range(6, 6 + num_itens):
             ws.row_dimensions[r].height = 25.5
-            if 6 <= r < (6 + num_itens):
-                ws.cell(row=r, column=4).value = "X"; ws.cell(row=r, column=7).value = "X"
-                if r > 6:
-                    for c in range(1, 14):
-                        src, tgt = ws.cell(row=6, column=c), ws.cell(row=r, column=c)
-                        if src.has_style: tgt._style = copy(src._style)
+            ws.cell(row=r, column=4).value = "X"
+            ws.cell(row=r, column=7).value = "X"
+            if r > 6:
+                for c in range(1, 14):
+                    src, tgt = ws.cell(row=6, column=c), ws.cell(row=r, column=c)
+                    if src.has_style: tgt._style = copy(src._style)
+                    
         n_inicio = 6 + num_itens
         if quadro:
-            ws.merge_cells(start_row=n_inicio, start_column=quadro['min_col'], end_row=quadro['max_row'] + diff, end_column=quadro['max_col'])
-            ws.row_dimensions[n_inicio].height = 409.5
-        for m in mesclagens: ws.merge_cells(start_row=m['min_row'] + diff, start_column=m['min_col'], end_row=m['max_row'] + diff, end_column=m['max_col'])
+            ws.merge_cells(start_row=n_inicio, start_column=quadro['min_col'], end_row=n_inicio, end_column=quadro['max_col'])
+            ws.row_dimensions[n_inicio].height = 36.75
+            
         return n_inicio
 
     def gerar_arquivo_excel(self, pai, blocos, id_proj, qtd_tot, molde, pasta):
@@ -199,7 +216,7 @@ class AppIngecon(ctk.CTk):
                 p_data = bloco['prensado_info']
                 ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
                 cell_h = ws.cell(row=row_idx, column=2)
-                cell_h.value = f"--- {self.limpar(p_data[1])} - {self.limpar(p_data[3])} ---"
+                cell_h.value = f"{self.limpar(p_data[1])} - {self.limpar(p_data[3])}"
                 cell_h.font = Font(bold=True, size=12)
                 cell_h.alignment = Alignment(horizontal='center', vertical='center')
                 row_idx += 1
@@ -216,7 +233,6 @@ class AppIngecon(ctk.CTk):
                 cell_q = ws.cell(row=r, column=1)
                 cell_q.value = f"={float(q_unit)}*A3"
                 
-                # Colunas numéricas padrão (B, C, E, F, H)
                 for col, idx in [(2,15), (3,8), (5,16), (6,10), (8,12)]:
                     v = self.converter_para_numero(item[idx])
                     c = ws.cell(row=r, column=col)
@@ -229,23 +245,34 @@ class AppIngecon(ctk.CTk):
                 ws.cell(row=r, column=11).value = "SEC-LAM" if tem_fita else "SEC"
                 ws.cell(row=r, column=12).value = d_l
                 
-                # AJUSTE COLUNA M (Código): Força conversão para número para evitar alerta do Excel
                 cod_val = self.limpar(item[1])
                 cell_cod = ws.cell(row=r, column=13)
                 try:
-                    # Se for apenas números, o float() ou int() vai funcionar
-                    if cod_val.isdigit():
-                        cell_cod.value = int(cod_val)
-                    else:
-                        # Se tiver letras, tenta converter partes decimais ou mantém texto
-                        cell_cod.value = float(cod_val.replace(',', '.'))
-                except:
-                    # Se der erro (ex: código com letras), mantém como texto limpo
-                    cell_cod.value = cod_val
+                    if cod_val.isdigit(): cell_cod.value = int(cod_val)
+                    else: cell_cod.value = float(cod_val.replace(',', '.'))
+                except: cell_cod.value = cod_val
                 
                 row_idx += 1
         
-        self.escrever_seguro(ws, f"A{l_obs}", id_proj, Alignment(horizontal='left', vertical='top'))
+        # Criação do texto formatado com CellRichText (Tamanho 18)
+        try:
+            fonte_normal = InlineFont(rFont='Arial Black', sz=18, b=False)
+            fonte_negrito = InlineFont(rFont='Arial Black', sz=18, b=True)
+            
+            texto_quadro = CellRichText(
+                TextBlock(font=fonte_normal, text="Projeto de Referência: "),
+                TextBlock(font=fonte_negrito, text=id_proj)
+            )
+        except Exception:
+            texto_quadro = f"Projeto de Referência: {id_proj}"
+
+        self.escrever_seguro(ws, f"A{l_obs}", texto_quadro, Alignment(horizontal='left', vertical='center'))
+        
+        # Omitida a aplicação global de Font() nesta célula para que a CellRichText funcione sem ser sobreposta
+        if isinstance(texto_quadro, str):
+            try: ws[f"A{l_obs}"].font = Font(name='Arial Black', size=18, bold=True)
+            except: pass
+            
         wb.save(os.path.join(pasta, f"{re.sub(r'[\\/*?:\u0022<>|]', '', tit)}.xlsx"))
 
     def iniciar_processamento(self):
@@ -260,7 +287,20 @@ class AppIngecon(ctk.CTk):
             for v in df.values.flatten():
                 if re.search(r'^[A-Z]{2,}\d+', str(v).strip().upper()): id_proj = str(v).strip().upper(); break
             
-            pasta = os.path.join(str(SERVIDOR), "Processados", id_proj)
+            MARCAS_PASTAS = {
+                "ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", 
+                "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", 
+                "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", 
+                "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", 
+                "SEP": "Sephora", "PRO": "Prototipo"
+            }
+            nome_marca = "Outros"
+            for sigla, nome in MARCAS_PASTAS.items():
+                if sigla in id_proj.upper(): 
+                    nome_marca = nome
+                    break
+            
+            pasta = os.path.join(str(SERVIDOR), nome_marca, id_proj)
             if not os.path.exists(pasta): os.makedirs(pasta)
             molde = self.resource_path('planilha_molde.xlsx')
 
