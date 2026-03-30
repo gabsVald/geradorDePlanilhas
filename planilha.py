@@ -17,7 +17,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE
 # =============================
-VERSAO_ATUAL = "2.0.4"
+VERSAO_ATUAL = "2.0.6"
 
 SERVIDOR = Path(r"X:\Engenharia\GeradorPlanilhas")
 ARQ_VERSAO = SERVIDOR / "version.txt"
@@ -179,12 +179,15 @@ class AppIngecon(ctk.CTk):
         total_linhas = sum(len(b['itens']) + (1 if b['tipo'] == 'prensado' else 0) for b in blocos)
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
         
-        cod, acab, desc = self.limpar(pai[1]), self.limpar(pai[2]), self.limpar(pai[3])
-        tit = f"{f'{cod}_{acab}' if acab else cod} - {desc}"
+        cod_p, acab_p, desc_p = self.limpar(pai[1]), self.limpar(pai[2]), self.limpar(pai[3])
+        tit = f"{f'{cod_p}_{acab_p}' if acab_p else cod_p} - {desc_p}"
         
         self.tratar_cabecalho_a1(ws, id_projeto=id_proj)
         self.escrever_seguro(ws, 'B3', tit)
-        self.escrever_seguro(ws, 'A3', qtd_tot)
+        
+        try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
+        except: ws['A3'].value = qtd_tot
+
         self.escrever_seguro(ws, 'M2', datetime.now().strftime('%d/%m/%Y'))
 
         blocos_ordenados = sorted(blocos, key=lambda x: 0 if x['tipo'] == 'normal' else 1)
@@ -196,7 +199,7 @@ class AppIngecon(ctk.CTk):
                 p_data = bloco['prensado_info']
                 ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
                 cell_h = ws.cell(row=row_idx, column=2)
-                cell_h.value = f"{self.limpar(p_data[1])} - {self.limpar(p_data[3])}"
+                cell_h.value = f"--- {self.limpar(p_data[1])} - {self.limpar(p_data[3])} ---"
                 cell_h.font = Font(bold=True, size=12)
                 cell_h.alignment = Alignment(horizontal='center', vertical='center')
                 row_idx += 1
@@ -206,28 +209,40 @@ class AppIngecon(ctk.CTk):
                 desc_full = self.limpar(item[3])
                 d_l, m_l_orig = (desc_full.split(" - ", 1) if " - " in desc_full else ("-", desc_full))
                 
-                # Captura os dados de Comp FB (15) e Larg FB (16)
                 comp_fb, larg_fb = self.limpar(item[15]), self.limpar(item[16])
-                
-                # NOVA LÓGICA: Se houver '-' ou '=' nas colunas de fita de borda, o processo vira SEC-LAM
                 tem_fita = any(x in [comp_fb, larg_fb] for x in ['-', '='])
                 
                 q_unit = item['q_unitaria_fatorada']
-                ws.cell(row=r, column=1).value = f"={float(q_unit)}*A3"
+                cell_q = ws.cell(row=r, column=1)
+                cell_q.value = f"={float(q_unit)}*A3"
                 
+                # Colunas numéricas padrão (B, C, E, F, H)
                 for col, idx in [(2,15), (3,8), (5,16), (6,10), (8,12)]:
                     v = self.converter_para_numero(item[idx])
-                    c = ws.cell(row=r, column=col); c.value = v
-                    if isinstance(v, (int, float)): c.number_format = '0'
-                
+                    c = ws.cell(row=r, column=col)
+                    c.value = v
+                    if isinstance(v, (int, float)):
+                        c.number_format = '0' 
+
                 ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(str(m_l_orig))
-                ws.cell(row=r, column=10).value = "" # Veio sempre vazio
-                
-                # Define o processo com base na presença de fita de borda
+                ws.cell(row=r, column=10).value = "" 
                 ws.cell(row=r, column=11).value = "SEC-LAM" if tem_fita else "SEC"
-                
                 ws.cell(row=r, column=12).value = d_l
-                ws.cell(row=r, column=13).value = self.limpar(item[1])
+                
+                # AJUSTE COLUNA M (Código): Força conversão para número para evitar alerta do Excel
+                cod_val = self.limpar(item[1])
+                cell_cod = ws.cell(row=r, column=13)
+                try:
+                    # Se for apenas números, o float() ou int() vai funcionar
+                    if cod_val.isdigit():
+                        cell_cod.value = int(cod_val)
+                    else:
+                        # Se tiver letras, tenta converter partes decimais ou mantém texto
+                        cell_cod.value = float(cod_val.replace(',', '.'))
+                except:
+                    # Se der erro (ex: código com letras), mantém como texto limpo
+                    cell_cod.value = cod_val
+                
                 row_idx += 1
         
         self.escrever_seguro(ws, f"A{l_obs}", id_proj, Alignment(horizontal='left', vertical='top'))
