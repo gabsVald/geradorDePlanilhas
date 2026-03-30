@@ -22,7 +22,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE
 # =============================
-VERSAO_ATUAL = "2.0.12"
+VERSAO_ATUAL = "2.0.14"
 
 SERVIDOR = Path(r"X:\Engenharia\GeradorPlanilhas")
 ARQ_VERSAO = SERVIDOR / "version.txt"
@@ -216,8 +216,8 @@ class AppIngecon(ctk.CTk):
                 p_data = bloco['prensado_info']
                 ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
                 cell_h = ws.cell(row=row_idx, column=2)
-                cell_h.value = f"{self.limpar(p_data[1])} - {self.limpar(p_data[3])}"
-                cell_h.font = Font(bold=True, size=12)
+                cell_h.value = f"--- {self.limpar(p_data[1])} - {self.limpar(p_data[3])}"
+                cell_h.font = Font(bold=True, size=14)
                 cell_h.alignment = Alignment(horizontal='center', vertical='center')
                 row_idx += 1
 
@@ -254,7 +254,6 @@ class AppIngecon(ctk.CTk):
                 
                 row_idx += 1
         
-        # Criação do texto formatado com CellRichText (Tamanho 18)
         try:
             fonte_normal = InlineFont(rFont='Arial Black', sz=18, b=False)
             fonte_negrito = InlineFont(rFont='Arial Black', sz=18, b=True)
@@ -268,7 +267,6 @@ class AppIngecon(ctk.CTk):
 
         self.escrever_seguro(ws, f"A{l_obs}", texto_quadro, Alignment(horizontal='left', vertical='center'))
         
-        # Omitida a aplicação global de Font() nesta célula para que a CellRichText funcione sem ser sobreposta
         if isinstance(texto_quadro, str):
             try: ws[f"A{l_obs}"].font = Font(name='Arial Black', size=18, bold=True)
             except: pass
@@ -304,6 +302,26 @@ class AppIngecon(ctk.CTk):
             if not os.path.exists(pasta): os.makedirs(pasta)
             molde = self.resource_path('planilha_molde.xlsx')
 
+            # --- LÓGICA DE DETECÇÃO DO NÍVEL DO PAI ATUALIZADA ---
+            col0_strs = [str(x).strip() for x in df[0] if str(x).strip()]
+            min_dots = min(x.count('.') for x in col0_strs)
+            
+            root_row = None
+            for _, row in df.iterrows():
+                if str(row[0]).strip().count('.') == min_dots:
+                    root_row = row
+                    break
+                    
+            root_cod = self.limpar(root_row[1])
+            is_root_prensado = "PRENSADO" in str(root_row[3]).upper() or root_cod == "1152032" or "PRLA" in str(root_row[2]).upper()
+            
+            # Se a raiz do projeto (ex: o item todo) é 11/15 ou é um Prensado, os pais estão no próprio min_dots.
+            # Se a raiz for "ZAR12346", os pais estão no min_dots + 1 (ex: 1.2, 1.8).
+            if root_cod.startswith(('11', '15')) or is_root_prensado:
+                nivel_pai = min_dots
+            else:
+                nivel_pai = min_dots + 1
+
             def f_valido(f):
                 c = self.limpar(f[1])
                 return c.startswith(('11', '15')) and not any(x in self.limpar(f[14]) for x in ["92", "9172", "93"])
@@ -311,7 +329,11 @@ class AppIngecon(ctk.CTk):
             consolidado = {}
             for _, row in df.iterrows():
                 nv, cod = self.limpar(row[0]), self.limpar(row[1])
-                if (cod.startswith(('11', '15')) or "PRENSADO" in str(row[3]).upper()) and nv.count('.') == 1:
+                desc_it = str(row[3]).upper()
+                is_prensado = "PRENSADO" in desc_it or cod == "1152032" or "PRLA" in str(row[2]).upper()
+                
+                # CORREÇÃO: Prensados PODEM criar planilhas se estiverem soltos no nivel_pai!
+                if (cod.startswith(('11', '15')) or is_prensado) and nv.count('.') == nivel_pai:
                     if cod not in consolidado:
                         consolidado[cod] = {'pai': row, 'blocos': [], 'qtd_pai_total': 0}
                     consolidado[cod]['qtd_pai_total'] += float(self.converter_para_numero(row[5]) or 0)
@@ -326,7 +348,9 @@ class AppIngecon(ctk.CTk):
                     row = descendentes.iloc[cursor]
                     nv_it, cod_it, desc_it = self.limpar(row[0]), self.limpar(row[1]), str(row[3]).upper()
                     
-                    if "PRENSADO" in desc_it or cod_it == "1152032" or "PRLA" in str(row[2]).upper():
+                    is_prensado = "PRENSADO" in desc_it or cod_it == "1152032" or "PRLA" in str(row[2]).upper()
+                    
+                    if is_prensado:
                         novo_bloco_prensado = {'tipo': 'prensado', 'prensado_info': row, 'itens': []}
                         q_prensado = float(self.converter_para_numero(row[5]) or 1)
                         cursor += 1
@@ -341,7 +365,8 @@ class AppIngecon(ctk.CTk):
                         if novo_bloco_prensado['itens']: info['blocos'].append(novo_bloco_prensado)
                         continue
                     
-                    if f_valido(row) and nv_it.count('.') == 2:
+                    # Usa o nível pai dinâmico para garantir que pegue o nível exato dos filhos
+                    if f_valido(row) and nv_it.count('.') == nivel_pai + 1:
                         item_copy = row.copy()
                         item_copy['q_unitaria_fatorada'] = float(self.converter_para_numero(row[5]) or 0)
                         bloco_avulso['itens'].append(item_copy)
