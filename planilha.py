@@ -20,7 +20,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE
 # =============================
-VERSAO_ATUAL = "2.0.16"
+VERSAO_ATUAL = "2.0.17"
 
 SERVIDOR = Path(r"X:\Engenharia\GeradorPlanilhas")
 ARQ_VERSAO = SERVIDOR / "version.txt"
@@ -106,7 +106,13 @@ class AppIngecon(ctk.CTk):
         if limpo in ["-", "="]: return limpo
         try:
             v_aj = limpo.replace(',', '.')
-            if '.' in v_aj: return float(v_aj)
+            if '.' in v_aj:
+                # Regra de arredondamento matemático: >= 0.5 sobe, < 0.5 desce
+                val_float = float(v_aj)
+                if val_float >= 0:
+                    return int(val_float + 0.5)
+                else:
+                    return int(val_float - 0.5)
             return int(v_aj)
         except: return limpo
 
