@@ -10,8 +10,6 @@ from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from copy import copy
 from openpyxl.styles import Font, Alignment
-
-# Importações para formatação mista (Rich Text) na mesma célula
 from openpyxl.cell.text import InlineFont
 from openpyxl.cell.rich_text import TextBlock, CellRichText
 
@@ -22,7 +20,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE
 # =============================
-VERSAO_ATUAL = "2.0.14"
+VERSAO_ATUAL = "2.0.16"
 
 SERVIDOR = Path(r"X:\Engenharia\GeradorPlanilhas")
 ARQ_VERSAO = SERVIDOR / "version.txt"
@@ -196,11 +194,19 @@ class AppIngecon(ctk.CTk):
         total_linhas = sum(len(b['itens']) + (1 if b['tipo'] == 'prensado' else 0) for b in blocos)
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
         
-        cod_p, acab_p, desc_p = self.limpar(pai[1]), self.limpar(pai[2]), self.limpar(pai[3])
-        tit = f"{f'{cod_p}_{acab_p}' if acab_p else cod_p} - {desc_p}"
+        cod_p = self.limpar(pai[1])
+        acab_p = self.limpar(pai[2])
+        desc_p = self.limpar(pai[3])
+        
+        # Correção do Título: ignora o underline se o acabamento estiver vazio
+        acab_real = acab_p.strip(" _-")
+        if acab_real:
+            tit_celula = f"{cod_p}_{acab_real} - {desc_p}"
+        else:
+            tit_celula = f"{cod_p} - {desc_p}"
         
         self.tratar_cabecalho_a1(ws, id_projeto=id_proj)
-        self.escrever_seguro(ws, 'B3', tit)
+        self.escrever_seguro(ws, 'B3', tit_celula)
         
         try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
         except: ws['A3'].value = qtd_tot
@@ -216,8 +222,8 @@ class AppIngecon(ctk.CTk):
                 p_data = bloco['prensado_info']
                 ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
                 cell_h = ws.cell(row=row_idx, column=2)
-                cell_h.value = f"--- {self.limpar(p_data[1])} - {self.limpar(p_data[3])}"
-                cell_h.font = Font(bold=True, size=14)
+                cell_h.value = f"{self.limpar(p_data[1])} - {self.limpar(p_data[3])}"
+                cell_h.font = Font(bold=True, size=15)
                 cell_h.alignment = Alignment(horizontal='center', vertical='center')
                 row_idx += 1
 
@@ -259,11 +265,11 @@ class AppIngecon(ctk.CTk):
             fonte_negrito = InlineFont(rFont='Arial Black', sz=18, b=True)
             
             texto_quadro = CellRichText(
-                TextBlock(font=fonte_normal, text="Projeto de Referência: "),
+                TextBlock(font=fonte_normal, text="PROJETO DE REFERÊNCIA: "),
                 TextBlock(font=fonte_negrito, text=id_proj)
             )
         except Exception:
-            texto_quadro = f"Projeto de Referência: {id_proj}"
+            texto_quadro = f"PROJETO DE REFERÊNCIA: {id_proj}"
 
         self.escrever_seguro(ws, f"A{l_obs}", texto_quadro, Alignment(horizontal='left', vertical='center'))
         
@@ -271,7 +277,8 @@ class AppIngecon(ctk.CTk):
             try: ws[f"A{l_obs}"].font = Font(name='Arial Black', size=18, bold=True)
             except: pass
             
-        wb.save(os.path.join(pasta, f"{re.sub(r'[\\/*?:\u0022<>|]', '', tit)}.xlsx"))
+        nome_arquivo = re.sub(r'[\\/*?:\u0022<>|]', '', tit_celula)
+        wb.save(os.path.join(pasta, f"{nome_arquivo}.xlsx"))
 
     def iniciar_processamento(self):
         self.btn_processar.configure(state="disabled")
@@ -280,7 +287,10 @@ class AppIngecon(ctk.CTk):
 
     def core_processamento(self):
         try:
-            df = pd.read_clipboard(sep='\t', header=None).fillna('')
+            # Correção de Leitura: dtype=str força a evitar bugs de decimais no 1.3 e 1.8
+            df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
+            df[0] = df[0].str.strip()
+            
             id_proj = "PROJETO"
             for v in df.values.flatten():
                 if re.search(r'^[A-Z]{2,}\d+', str(v).strip().upper()): id_proj = str(v).strip().upper(); break
@@ -315,8 +325,6 @@ class AppIngecon(ctk.CTk):
             root_cod = self.limpar(root_row[1])
             is_root_prensado = "PRENSADO" in str(root_row[3]).upper() or root_cod == "1152032" or "PRLA" in str(root_row[2]).upper()
             
-            # Se a raiz do projeto (ex: o item todo) é 11/15 ou é um Prensado, os pais estão no próprio min_dots.
-            # Se a raiz for "ZAR12346", os pais estão no min_dots + 1 (ex: 1.2, 1.8).
             if root_cod.startswith(('11', '15')) or is_root_prensado:
                 nivel_pai = min_dots
             else:
@@ -324,22 +332,31 @@ class AppIngecon(ctk.CTk):
 
             def f_valido(f):
                 c = self.limpar(f[1])
+                a = str(f[2]).upper()
+                # Aplicação da regra do * e CORTE para itens filhos
+                if '*' in a or 'CORTE' in a:
+                    return False
                 return c.startswith(('11', '15')) and not any(x in self.limpar(f[14]) for x in ["92", "9172", "93"])
 
             consolidado = {}
             for _, row in df.iterrows():
                 nv, cod = self.limpar(row[0]), self.limpar(row[1])
                 desc_it = str(row[3]).upper()
-                is_prensado = "PRENSADO" in desc_it or cod == "1152032" or "PRLA" in str(row[2]).upper()
+                acab_it = str(row[2]).upper()
                 
-                # CORREÇÃO: Prensados PODEM criar planilhas se estiverem soltos no nivel_pai!
+                # Aplicação da regra de bloqueio total: * ou CORTE impede a peça de virar planilha
+                if '*' in acab_it or 'CORTE' in acab_it:
+                    continue
+                
+                is_prensado = "PRENSADO" in desc_it or cod == "1152032" or "PRLA" in acab_it
+                
                 if (cod.startswith(('11', '15')) or is_prensado) and nv.count('.') == nivel_pai:
-                    if cod not in consolidado:
-                        consolidado[cod] = {'pai': row, 'blocos': [], 'qtd_pai_total': 0}
-                    consolidado[cod]['qtd_pai_total'] += float(self.converter_para_numero(row[5]) or 0)
+                    # Usando o nível como chave para evitar conflito caso dois níveis diferentes tenham o mesmo código base
+                    if nv not in consolidado:
+                        consolidado[nv] = {'pai': row, 'blocos': [], 'qtd_pai_total': 0}
+                    consolidado[nv]['qtd_pai_total'] += float(self.converter_para_numero(row[5]) or 0)
 
-            for cod_pai, info in consolidado.items():
-                nv_pai = info['pai'][0]
+            for nv_pai, info in consolidado.items():
                 descendentes = df[df[0].str.startswith(nv_pai + ".")].copy()
                 
                 bloco_avulso = {'tipo': 'normal', 'itens': []}
@@ -347,8 +364,16 @@ class AppIngecon(ctk.CTk):
                 while cursor < len(descendentes):
                     row = descendentes.iloc[cursor]
                     nv_it, cod_it, desc_it = self.limpar(row[0]), self.limpar(row[1]), str(row[3]).upper()
+                    acab_it = str(row[2]).upper()
                     
-                    is_prensado = "PRENSADO" in desc_it or cod_it == "1152032" or "PRLA" in str(row[2]).upper()
+                    # Se um filho tem * ou CORTE, ele e todos os sub-itens dele são pulados sumariamente
+                    if '*' in acab_it or 'CORTE' in acab_it:
+                        cursor += 1
+                        while cursor < len(descendentes) and str(descendentes.iloc[cursor][0]).startswith(nv_it + "."):
+                            cursor += 1
+                        continue
+
+                    is_prensado = "PRENSADO" in desc_it or cod_it == "1152032" or "PRLA" in acab_it
                     
                     if is_prensado:
                         novo_bloco_prensado = {'tipo': 'prensado', 'prensado_info': row, 'itens': []}
@@ -365,13 +390,20 @@ class AppIngecon(ctk.CTk):
                         if novo_bloco_prensado['itens']: info['blocos'].append(novo_bloco_prensado)
                         continue
                     
-                    # Usa o nível pai dinâmico para garantir que pegue o nível exato dos filhos
                     if f_valido(row) and nv_it.count('.') == nivel_pai + 1:
                         item_copy = row.copy()
                         item_copy['q_unitaria_fatorada'] = float(self.converter_para_numero(row[5]) or 0)
                         bloco_avulso['itens'].append(item_copy)
                     cursor += 1
                 
+                # --- NOVA REGRA DO ESPELHO vs PEÇA SOLITÁRIA ---
+                # Se NÃO tem descendentes abaixo (ex: 1.3), é uma peça solitária. Gera a planilha.
+                # Se TEM descendentes, mas todos foram recusados (ex: só tinha '9'), é um espelho. NÃO gera a planilha.
+                if len(descendentes) == 0:
+                    item_copy = info['pai'].copy()
+                    item_copy['q_unitaria_fatorada'] = 1.0
+                    bloco_avulso['itens'].append(item_copy)
+
                 if bloco_avulso['itens']:
                     info['blocos'].insert(0, bloco_avulso)
 
