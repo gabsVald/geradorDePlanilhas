@@ -20,7 +20,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE
 # =============================
-VERSAO_ATUAL = "2.0.17"
+VERSAO_ATUAL = "2.0.18"
 
 SERVIDOR = Path(r"X:\Engenharia\GeradorPlanilhas")
 ARQ_VERSAO = SERVIDOR / "version.txt"
@@ -107,7 +107,6 @@ class AppIngecon(ctk.CTk):
         try:
             v_aj = limpo.replace(',', '.')
             if '.' in v_aj:
-                # Regra de arredondamento matemático: >= 0.5 sobe, < 0.5 desce
                 val_float = float(v_aj)
                 if val_float >= 0:
                     return int(val_float + 0.5)
@@ -204,7 +203,6 @@ class AppIngecon(ctk.CTk):
         acab_p = self.limpar(pai[2])
         desc_p = self.limpar(pai[3])
         
-        # Correção do Título: ignora o underline se o acabamento estiver vazio
         acab_real = acab_p.strip(" _-")
         if acab_real:
             tit_celula = f"{cod_p}_{acab_real} - {desc_p}"
@@ -293,7 +291,6 @@ class AppIngecon(ctk.CTk):
 
     def core_processamento(self):
         try:
-            # Correção de Leitura: dtype=str força a evitar bugs de decimais no 1.3 e 1.8
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
             df[0] = df[0].str.strip()
             
@@ -318,7 +315,6 @@ class AppIngecon(ctk.CTk):
             if not os.path.exists(pasta): os.makedirs(pasta)
             molde = self.resource_path('planilha_molde.xlsx')
 
-            # --- LÓGICA DE DETECÇÃO DO NÍVEL DO PAI ATUALIZADA ---
             col0_strs = [str(x).strip() for x in df[0] if str(x).strip()]
             min_dots = min(x.count('.') for x in col0_strs)
             
@@ -339,10 +335,19 @@ class AppIngecon(ctk.CTk):
             def f_valido(f):
                 c = self.limpar(f[1])
                 a = str(f[2]).upper()
-                # Aplicação da regra do * e CORTE para itens filhos
+                desc = str(f[3]).upper()
+                mp_cod = self.limpar(f[14])
+
                 if '*' in a or 'CORTE' in a:
                     return False
-                return c.startswith(('11', '15')) and not any(x in self.limpar(f[14]) for x in ["92", "9172", "93"])
+                
+                # Regra de Exceção MP 92: KRION, CORIAN, DURASEIN
+                if mp_cod.startswith("92"):
+                    if any(marca in desc for marca in ["KRION", "CORIAN", "DURASEIN"]):
+                        return c.startswith(('11', '15')) # Se for uma dessas marcas, deixa passar
+                    return False # Senão, bloqueia MP 92
+
+                return c.startswith(('11', '15')) and not any(x in mp_cod for x in ["9172", "93"])
 
             consolidado = {}
             for _, row in df.iterrows():
@@ -350,14 +355,12 @@ class AppIngecon(ctk.CTk):
                 desc_it = str(row[3]).upper()
                 acab_it = str(row[2]).upper()
                 
-                # Aplicação da regra de bloqueio total: * ou CORTE impede a peça de virar planilha
                 if '*' in acab_it or 'CORTE' in acab_it:
                     continue
                 
                 is_prensado = "PRENSADO" in desc_it or cod == "1152032" or "PRLA" in acab_it
                 
                 if (cod.startswith(('11', '15')) or is_prensado) and nv.count('.') == nivel_pai:
-                    # Usando o nível como chave para evitar conflito caso dois níveis diferentes tenham o mesmo código base
                     if nv not in consolidado:
                         consolidado[nv] = {'pai': row, 'blocos': [], 'qtd_pai_total': 0}
                     consolidado[nv]['qtd_pai_total'] += float(self.converter_para_numero(row[5]) or 0)
@@ -372,7 +375,6 @@ class AppIngecon(ctk.CTk):
                     nv_it, cod_it, desc_it = self.limpar(row[0]), self.limpar(row[1]), str(row[3]).upper()
                     acab_it = str(row[2]).upper()
                     
-                    # Se um filho tem * ou CORTE, ele e todos os sub-itens dele são pulados sumariamente
                     if '*' in acab_it or 'CORTE' in acab_it:
                         cursor += 1
                         while cursor < len(descendentes) and str(descendentes.iloc[cursor][0]).startswith(nv_it + "."):
@@ -402,9 +404,6 @@ class AppIngecon(ctk.CTk):
                         bloco_avulso['itens'].append(item_copy)
                     cursor += 1
                 
-                # --- NOVA REGRA DO ESPELHO vs PEÇA SOLITÁRIA ---
-                # Se NÃO tem descendentes abaixo (ex: 1.3), é uma peça solitária. Gera a planilha.
-                # Se TEM descendentes, mas todos foram recusados (ex: só tinha '9'), é um espelho. NÃO gera a planilha.
                 if len(descendentes) == 0:
                     item_copy = info['pai'].copy()
                     item_copy['q_unitaria_fatorada'] = 1.0
