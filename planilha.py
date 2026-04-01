@@ -18,13 +18,18 @@ import customtkinter as ctk
 from tkinter import messagebox
 
 # =============================
-# CONFIG AUTO UPDATE
+# CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.18"
+VERSAO_ATUAL = "2.0.22"
 
-SERVIDOR = Path(r"X:\Engenharia\GeradorPlanilhas")
-ARQ_VERSAO = SERVIDOR / "version.txt"
-EXE_SERVIDOR = SERVIDOR / "Gerador_Planilhas_Ingecon.exe"
+# Pasta RAIZ (Onde ficam as pastas das marcas: Amaro, Renner, Zara, etc)
+DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Engenharia\GeradorPlanilhas")
+
+# Pasta do SISTEMA (Onde fica o .exe e o version.txt)
+DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
+
+ARQ_VERSAO = DIRETORIO_SISTEMA / "version.txt"
+EXE_SERVIDOR = DIRETORIO_SISTEMA / "Gerador_Planilhas_Ingecon.exe"
 
 COR_PRINCIPAL = "#d32732"
 COR_HOVER = "#a81f28"
@@ -294,6 +299,16 @@ class AppIngecon(ctk.CTk):
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
             df[0] = df[0].str.strip()
             
+            # --- NOVA VALIDAÇÃO DO ITEM PRIMORDIAL ---
+            # Verifica se o primeiro código real (pulando a palavra "Código" se copiado o cabeçalho) tem alguma letra.
+            primeiro_codigo = str(df.iloc[0, 1]).strip()
+            if len(df) > 1 and primeiro_codigo.upper() in ["CÓDIGO", "CODIGO"]:
+                primeiro_codigo = str(df.iloc[1, 1]).strip()
+                
+            if not re.search(r'[A-Za-z]', primeiro_codigo):
+                raise Exception("Não foi encontrado Código Pai, verificar se a opção 'Exibir Selecionado' esta ativada no PDM")
+            # -----------------------------------------
+
             id_proj = "PROJETO"
             for v in df.values.flatten():
                 if re.search(r'^[A-Z]{2,}\d+', str(v).strip().upper()): id_proj = str(v).strip().upper(); break
@@ -311,7 +326,7 @@ class AppIngecon(ctk.CTk):
                     nome_marca = nome
                     break
             
-            pasta = os.path.join(str(SERVIDOR), nome_marca, id_proj)
+            pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), nome_marca, id_proj)
             if not os.path.exists(pasta): os.makedirs(pasta)
             molde = self.resource_path('planilha_molde.xlsx')
 
@@ -344,8 +359,8 @@ class AppIngecon(ctk.CTk):
                 # Regra de Exceção MP 92: KRION, CORIAN, DURASEIN
                 if mp_cod.startswith("92"):
                     if any(marca in desc for marca in ["KRION", "CORIAN", "DURASEIN"]):
-                        return c.startswith(('11', '15')) # Se for uma dessas marcas, deixa passar
-                    return False # Senão, bloqueia MP 92
+                        return c.startswith(('11', '15')) 
+                    return False 
 
                 return c.startswith(('11', '15')) and not any(x in mp_cod for x in ["9172", "93"])
 
