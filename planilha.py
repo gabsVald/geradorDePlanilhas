@@ -20,13 +20,19 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.22"
+VERSAO_ATUAL = "2.0.25"
 
 # Pasta RAIZ (Onde ficam as pastas das marcas: Amaro, Renner, Zara, etc)
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Engenharia\GeradorPlanilhas")
 
 # Pasta do SISTEMA (Onde fica o .exe e o version.txt)
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
+
+# Pastas para verificação de duplicidade (Busca Recursiva)
+PASTAS_VERIFICACAO = [
+    Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS"),
+    DIRETORIO_RAIZ_PLANILHAS
+]
 
 ARQ_VERSAO = DIRETORIO_SISTEMA / "version.txt"
 EXE_SERVIDOR = DIRETORIO_SISTEMA / "Gerador_Planilhas_Ingecon.exe"
@@ -299,20 +305,44 @@ class AppIngecon(ctk.CTk):
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
             df[0] = df[0].str.strip()
             
-            # --- NOVA VALIDAÇÃO DO ITEM PRIMORDIAL ---
-            # Verifica se o primeiro código real (pulando a palavra "Código" se copiado o cabeçalho) tem alguma letra.
+            # --- VALIDAÇÃO DO ITEM PRIMORDIAL ---
             primeiro_codigo = str(df.iloc[0, 1]).strip()
             if len(df) > 1 and primeiro_codigo.upper() in ["CÓDIGO", "CODIGO"]:
                 primeiro_codigo = str(df.iloc[1, 1]).strip()
                 
-            if not re.search(r'[A-Za-z]', primeiro_codigo):
-                raise Exception("Não foi encontrado Código Pai, verificar se a opção 'Exibir Selecionado' esta ativada no PDM")
-            # -----------------------------------------
+            if not (re.search(r'[A-Za-z]', primeiro_codigo) or primeiro_codigo.startswith(('11', '15'))):
+                raise Exception("Nao foi encontrado Código Pai verificar se a opção Exibir Selecionado esta ativada no PDM")
 
-            id_proj = "PROJETO"
+            # --- IDENTIFICAÇÃO DO ID DO PROJETO ---
+            id_proj = None
             for v in df.values.flatten():
-                if re.search(r'^[A-Z]{2,}\d+', str(v).strip().upper()): id_proj = str(v).strip().upper(); break
+                v_str = str(v).strip().upper()
+                if re.search(r'^[A-Z]{2,}\d+', v_str) or (v_str.isdigit() and v_str.startswith(('11', '15'))): 
+                    id_proj = v_str
+                    break
             
+            if not id_proj: id_proj = "PROJETO"
+
+            # --- VERIFICAÇÃO DE DUPLICIDADE EM REDE (RECURSIVA) ---
+            caminho_encontrado = None
+            for pasta_busca in PASTAS_VERIFICACAO:
+                if not pasta_busca.exists(): continue
+                # os.walk percorre pastas e todas as subpastas
+                for root, dirs, files in os.walk(pasta_busca):
+                    if id_proj in dirs:
+                        caminho_encontrado = os.path.join(root, id_proj)
+                        break
+                if caminho_encontrado: break
+
+            if caminho_encontrado:
+                caminho_txt = Path(os.path.expanduser("~/Desktop")) / "PROJETO_EXISTENTE.txt"
+                with open(caminho_txt, "w") as f:
+                    f.write(f"PROJETO JA GERADO ANTERIORMENTE\n\nID: {id_proj}\nCAMINHO: {caminho_encontrado}")
+                
+                messagebox.showwarning("Projeto Já Existente", f"Este projeto já foi gerado anteriormente!\n\nID: {id_proj}\nCaminho: {caminho_encontrado}\n\nUm arquivo TXT com este caminho foi criado na sua Área de Trabalho.")
+                raise Exception("Processamento interrompido: Projeto duplicado.")
+
+            # --- DEFINIÇÃO DA MARCA E PASTA ---
             MARCAS_PASTAS = {
                 "ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", 
                 "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", 
@@ -330,6 +360,7 @@ class AppIngecon(ctk.CTk):
             if not os.path.exists(pasta): os.makedirs(pasta)
             molde = self.resource_path('planilha_molde.xlsx')
 
+            # --- LÓGICA DE NÍVEIS ---
             col0_strs = [str(x).strip() for x in df[0] if str(x).strip()]
             min_dots = min(x.count('.') for x in col0_strs)
             
@@ -353,10 +384,10 @@ class AppIngecon(ctk.CTk):
                 desc = str(f[3]).upper()
                 mp_cod = self.limpar(f[14])
 
-                if '*' in a or 'CORTE' in a:
-                    return False
-                
-                # Regra de Exceção MP 92: KRION, CORIAN, DURASEIN
+                if '*' in a or 'CORTE' in a: return False
+                if "LAMINA NATURAL" in desc or "LAMINA NATURAL" in mp_cod: return False
+                if "LAMINADO FORM" in desc or "LAMINADO FORM" in mp_cod: return c.startswith(('11', '15'))
+
                 if mp_cod.startswith("92"):
                     if any(marca in desc for marca in ["KRION", "CORIAN", "DURASEIN"]):
                         return c.startswith(('11', '15')) 
@@ -370,8 +401,7 @@ class AppIngecon(ctk.CTk):
                 desc_it = str(row[3]).upper()
                 acab_it = str(row[2]).upper()
                 
-                if '*' in acab_it or 'CORTE' in acab_it:
-                    continue
+                if '*' in acab_it or 'CORTE' in acab_it: continue
                 
                 is_prensado = "PRENSADO" in desc_it or cod == "1152032" or "PRLA" in acab_it
                 
@@ -397,20 +427,21 @@ class AppIngecon(ctk.CTk):
                         continue
 
                     is_prensado = "PRENSADO" in desc_it or cod_it == "1152032" or "PRLA" in acab_it
-                    
-                    if is_prensado:
-                        novo_bloco_prensado = {'tipo': 'prensado', 'prensado_info': row, 'itens': []}
-                        q_prensado = float(self.converter_para_numero(row[5]) or 1)
+                    is_sub_15 = cod_it.startswith('15') and nv_it.count('.') > nivel_pai
+
+                    if is_prensado or is_sub_15:
+                        novo_bloco = {'tipo': 'prensado', 'prensado_info': row, 'itens': []}
+                        q_fator = float(self.converter_para_numero(row[5]) or 1)
                         cursor += 1
                         while cursor < len(descendentes):
                             sub_row = descendentes.iloc[cursor]
                             if not str(sub_row[0]).startswith(nv_it + "."): break
                             if f_valido(sub_row):
                                 item_copy = sub_row.copy()
-                                item_copy['q_unitaria_fatorada'] = float(self.converter_para_numero(sub_row[5]) or 0) * q_prensado
-                                novo_bloco_prensado['itens'].append(item_copy)
+                                item_copy['q_unitaria_fatorada'] = float(self.converter_para_numero(sub_row[5]) or 0) * q_fator
+                                novo_bloco['itens'].append(item_copy)
                             cursor += 1
-                        if novo_bloco_prensado['itens']: info['blocos'].append(novo_bloco_prensado)
+                        if novo_bloco['itens']: info['blocos'].append(novo_bloco)
                         continue
                     
                     if f_valido(row) and nv_it.count('.') == nivel_pai + 1:
@@ -434,6 +465,8 @@ class AppIngecon(ctk.CTk):
         except Exception as e: self.after(0, self.erro_final, str(e))
 
     def sucesso_final(self, p): self.progress.stop(); self.progress.grid_forget(); self.btn_processar.configure(state="normal"); os.startfile(p); messagebox.showinfo("Ingecon", "Concluído!")
-    def erro_final(self, m): self.progress.stop(); self.btn_processar.configure(state="normal"); messagebox.showerror("Erro", m)
+    def erro_final(self, m):
+        self.progress.stop(); self.btn_processar.configure(state="normal")
+        if "duplicado" not in m.lower(): messagebox.showerror("Erro", m)
 
 if __name__ == "__main__": AppIngecon().mainloop()
