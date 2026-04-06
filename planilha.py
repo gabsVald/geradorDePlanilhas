@@ -20,7 +20,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.22"
+VERSAO_ATUAL = "2.0.23"
 
 # Pasta RAIZ (Onde ficam as pastas das marcas: Amaro, Renner, Zara, etc)
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Engenharia\GeradorPlanilhas")
@@ -299,15 +299,13 @@ class AppIngecon(ctk.CTk):
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
             df[0] = df[0].str.strip()
             
-            # --- NOVA VALIDAÇÃO DO ITEM PRIMORDIAL ---
-            # Verifica se o primeiro código real (pulando a palavra "Código" se copiado o cabeçalho) tem alguma letra.
+            # --- VALIDAÇÃO DO ITEM PRIMORDIAL ---
             primeiro_codigo = str(df.iloc[0, 1]).strip()
             if len(df) > 1 and primeiro_codigo.upper() in ["CÓDIGO", "CODIGO"]:
                 primeiro_codigo = str(df.iloc[1, 1]).strip()
                 
             if not re.search(r'[A-Za-z]', primeiro_codigo):
                 raise Exception("Não foi encontrado Código Pai, verificar se a opção 'Exibir Selecionado' esta ativada no PDM")
-            # -----------------------------------------
 
             id_proj = "PROJETO"
             for v in df.values.flatten():
@@ -356,6 +354,14 @@ class AppIngecon(ctk.CTk):
                 if '*' in a or 'CORTE' in a:
                     return False
                 
+                # Regra: LAMINA NATURAL -> NÃO adiciona
+                if "LAMINA NATURAL" in desc or "LAMINA NATURAL" in mp_cod:
+                    return False
+                
+                # Regra: LAMINADO FORM -> ADICIONA (se for código 11 ou 15)
+                if "LAMINADO FORM" in desc or "LAMINADO FORM" in mp_cod:
+                    return c.startswith(('11', '15'))
+
                 # Regra de Exceção MP 92: KRION, CORIAN, DURASEIN
                 if mp_cod.startswith("92"):
                     if any(marca in desc for marca in ["KRION", "CORIAN", "DURASEIN"]):
@@ -396,21 +402,23 @@ class AppIngecon(ctk.CTk):
                             cursor += 1
                         continue
 
+                    # Identifica se é Prensado OU se é um filho código 15 (para virar cabeçalho)
                     is_prensado = "PRENSADO" in desc_it or cod_it == "1152032" or "PRLA" in acab_it
-                    
-                    if is_prensado:
-                        novo_bloco_prensado = {'tipo': 'prensado', 'prensado_info': row, 'itens': []}
-                        q_prensado = float(self.converter_para_numero(row[5]) or 1)
+                    is_filho_15 = cod_it.startswith('15') and nv_it.count('.') > nivel_pai
+
+                    if is_prensado or is_filho_15:
+                        novo_bloco = {'tipo': 'prensado', 'prensado_info': row, 'itens': []}
+                        q_fator = float(self.converter_para_numero(row[5]) or 1)
                         cursor += 1
                         while cursor < len(descendentes):
                             sub_row = descendentes.iloc[cursor]
                             if not str(sub_row[0]).startswith(nv_it + "."): break
                             if f_valido(sub_row):
                                 item_copy = sub_row.copy()
-                                item_copy['q_unitaria_fatorada'] = float(self.converter_para_numero(sub_row[5]) or 0) * q_prensado
-                                novo_bloco_prensado['itens'].append(item_copy)
+                                item_copy['q_unitaria_fatorada'] = float(self.converter_para_numero(sub_row[5]) or 0) * q_fator
+                                novo_bloco['itens'].append(item_copy)
                             cursor += 1
-                        if novo_bloco_prensado['itens']: info['blocos'].append(novo_bloco_prensado)
+                        if novo_bloco['itens']: info['blocos'].append(novo_bloco)
                         continue
                     
                     if f_valido(row) and nv_it.count('.') == nivel_pai + 1:
