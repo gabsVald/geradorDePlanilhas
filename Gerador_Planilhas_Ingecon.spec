@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('planilha_molde.xlsx', '.'), ('logos', 'logos')]
+datas = [('planilha_molde.xlsm', '.'), ('logos', 'logos')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('customtkinter')
