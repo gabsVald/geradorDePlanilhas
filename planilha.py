@@ -20,10 +20,10 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.27"
+VERSAO_ATUAL = "2.0.31"
 
 # Pastas RAIZ
-DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Engenharia\GeradorPlanilhas")
+DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS\PLANOS DE CORTE 2026")
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
 
 # Pastas para verificação de duplicidade (Busca em Rede)
@@ -203,7 +203,6 @@ class AppIngecon(ctk.CTk):
         return None
 
     def gerar_arquivo_excel(self, pai, blocos, id_proj, qtd_tot, molde, pasta):
-        # AJUSTE: Carregar com keep_vba=True para não perder a macro do molde
         wb = load_workbook(molde, keep_vba=True); ws = wb.active
         total_linhas = sum(len(b['itens']) + (1 if b['tipo'] == 'prensado' else 0) for b in blocos)
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
@@ -269,7 +268,6 @@ class AppIngecon(ctk.CTk):
 
         self.escrever_seguro(ws, f"A{l_obs}", texto_q, Alignment(horizontal='left', vertical='center'))
         
-        # AJUSTE: Salvar como .xlsm para manter a macro habilitada
         nome_arquivo = re.sub(r'[\\/*?:\u0022<>|]', '', tit_celula)
         wb.save(os.path.join(pasta, f"{nome_arquivo}.xlsm"))
 
@@ -280,14 +278,22 @@ class AppIngecon(ctk.CTk):
 
     def core_processamento(self):
         try:
+            # Captura o clipboard
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
+            
+            # Validação anti-erro caso o clipboard esteja vazio ou mal formatado
+            if df.empty or df.shape[1] < 2:
+                raise Exception("Nao foi encontrado Código Pai verificar se a opção Exibir Selecionado esta ativada no PDM")
+
             df[0] = df[0].str.strip()
             
-            primeiro_codigo = str(df.iloc[0, 1]).strip()
-            if len(df) > 1 and primeiro_codigo.upper() in ["CÓDIGO", "CODIGO"]:
-                primeiro_codigo = str(df.iloc[1, 1]).strip()
-            if not re.search(r'[A-Za-z]', primeiro_codigo):
-                raise Exception("Não foi encontrado Código Pai, verificar se a opção 'Exibir Selecionado' esta ativada no PDM")
+            # Identifica o código primordial na linha 1 ou 2
+            pidx_inicio = 1 if str(df.iloc[0,1]).upper() in ["CÓDIGO", "CODIGO"] else 0
+            primeiro = str(df.iloc[pidx_inicio, 1]).strip()
+            
+            # REGRA: Deve conter letra obrigatoriamente (tipo ZAR421..., REN...)
+            if not primeiro or not re.search(r'[A-Za-z]', primeiro): 
+                raise Exception("Nao foi encontrado Código Pai verificar se a opção Exibir Selecionado esta ativada no PDM")
 
             id_proj = "PROJETO"
             for v in df.values.flatten():
@@ -312,6 +318,7 @@ class AppIngecon(ctk.CTk):
 
             def f_valido(f):
                 c, a, d, mc = self.limpar(f[1]), str(f[2]).upper(), str(f[3]).upper(), self.limpar(f[14])
+                # Regra LAMINA MADEIRA
                 if '*' in a or 'CORTE' in a or "LAMINA MADEIRA" in d or "LAMINA MADEIRA" in mc: return False
                 if "LAMINADO FORM" in d or "LAMINADO FORM" in mc: return c.startswith(('11', '15'))
                 if mc.startswith("92"):
@@ -322,19 +329,20 @@ class AppIngecon(ctk.CTk):
             for _, row in df.iterrows():
                 nv, cod, desc, acab = self.limpar(row[0]), self.limpar(row[1]), str(row[3]).upper(), str(row[2]).upper()
                 if '*' in acab or 'CORTE' in acab: continue
-                isp = "PRENSADO" in desc or cod == "1152032" or "PRLA" in acab
-                if (cod.startswith(('11', '15')) or isp) and nv.count('.') == nivel_pai:
+                
+                # BLOQUEIO: Só cria a planilha principal (pai) se o código começar estritamente com 11 ou 15!
+                if cod.startswith(('11', '15')) and nv.count('.') == nivel_pai:
                     if nv not in consolidado: consolidado[nv] = {'pai': row, 'blocos': [], 'qtd_pai_total': 0}
                     consolidado[nv]['qtd_pai_total'] += float(self.converter_para_numero(row[5]) or 0)
 
             lista_duplicados = []
 
             for nv_pai, info in consolidado.items():
-                cod_atual = self.limpar(info['pai'][1])
-                caminho_net = self.verificar_duplicidade_em_rede(cod_atual)
+                cod_pai_atual = self.limpar(info['pai'][1])
+                caminho_net = self.verificar_duplicidade_em_rede(cod_pai_atual)
                 
                 if caminho_net:
-                    lista_duplicados.append((cod_atual, caminho_net))
+                    lista_duplicados.append((cod_pai_atual, caminho_net))
                     continue 
 
                 descendentes = df[df[0].str.startswith(nv_pai + ".")].copy()
@@ -343,13 +351,12 @@ class AppIngecon(ctk.CTk):
                 while cursor < len(descendentes):
                     row = descendentes.iloc[cursor]
                     nv, cod, desc, acab = self.limpar(row[0]), self.limpar(row[1]), str(row[3]).upper(), str(row[2]).upper()
-                    if '*' in acab or 'CORTE' in acab:
-                        cursor += 1
-                        while cursor < len(descendentes) and str(descendentes.iloc[cursor][0]).startswith(nv + "."): cursor += 1
-                        continue
+                    
+                    # Regra 15 dentro de 15 como bloco
+                    is_15_under_15 = cod_pai_atual.startswith('15') and cod.startswith('15') and nv.count('.') > nivel_pai
                     isp = "PRENSADO" in desc or cod == "1152032" or "PRLA" in acab
-                    isf15 = cod.startswith('15') and nv.count('.') > nivel_pai
-                    if isp or isf15:
+                    
+                    if is_15_under_15 or isp:
                         nb = {'tipo': 'prensado', 'prensado_info': row, 'itens': []}
                         qf = float(self.converter_para_numero(row[5]) or 1)
                         cursor += 1
@@ -363,14 +370,23 @@ class AppIngecon(ctk.CTk):
                             cursor += 1
                         if nb['itens']: info['blocos'].append(nb)
                         continue
+                    
+                    if '*' in acab or 'CORTE' in acab:
+                        cursor += 1
+                        while cursor < len(descendentes) and str(descendentes.iloc[cursor][0]).startswith(nv + "."): cursor += 1
+                        continue
+                        
                     if f_valido(row) and nv.count('.') == nivel_pai + 1:
                         ic = row.copy(); ic['q_unitaria_fatorada'] = float(self.converter_para_numero(row[5]) or 0)
                         bloco_avulso['itens'].append(ic)
                     cursor += 1
-                if not descendentes.empty and not bloco_avulso['itens'] and not info['blocos']:
-                     ic = info['pai'].copy(); ic['q_unitaria_fatorada'] = 1.0; bloco_avulso['itens'].append(ic)
-                if bloco_avulso['itens']: info['blocos'].insert(0, bloco_avulso)
+                
+                if descendentes.empty or (not bloco_avulso['itens'] and not info['blocos']):
+                     ic = info['pai'].copy() 
+                     ic['q_unitaria_fatorada'] = 1.0
+                     bloco_avulso['itens'].append(ic)
 
+                if bloco_avulso['itens']: info['blocos'].insert(0, bloco_avulso)
                 if info['blocos']: self.gerar_arquivo_excel(info['pai'], info['blocos'], id_proj, info['qtd_pai_total'], molde, pasta)
 
             if lista_duplicados:
@@ -378,7 +394,7 @@ class AppIngecon(ctk.CTk):
                 conteudo_txt = "PROJETO(S) JÁ GERADO(S) ANTERIORMENTE\n\n"
                 mensagem_popup = "Os seguintes códigos já possuem planilhas geradas:\n\n"
                 for cod, cam in lista_duplicados:
-                    conteudo_txt += f"{cod} -\n{cam}\n\n"
+                    conteudo_txt += f"{cod} -\n{cam}\n"
                     mensagem_popup += f"• {cod}\n"
                 with open(caminho_desktop, "w", encoding="utf-8") as f:
                     f.write(conteudo_txt)
