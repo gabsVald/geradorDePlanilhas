@@ -20,13 +20,13 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.42"
+VERSAO_ATUAL = "2.0.51"
 
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS\PLANOS DE CORTE 2026")
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
 
 PASTAS_VERIFICACAO = [
-    Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS"),
+    Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS")
 ]
 
 ARQ_VERSAO = DIRETORIO_SISTEMA / "version.txt"
@@ -53,16 +53,10 @@ class AppIngecon(ctk.CTk):
                                          font=ctk.CTkFont(size=22, weight="bold"), text_color="white")
         self.label_titulo.grid(row=0, column=0, pady=20)
 
-        # CHECKBOX DE MODO TESTE
-        self.chk_teste = ctk.CTkCheckBox(self, text="Modo de Teste (Salvar no Desktop)", 
-                                         fg_color=COR_PRINCIPAL, hover_color=COR_HOVER,
-                                         font=ctk.CTkFont(size=13, weight="bold"))
-        self.chk_teste.grid(row=1, column=0, pady=(0, 15))
-
         self.btn_processar = ctk.CTkButton(self, text="Colar - Gerar Planilhas", command=self.iniciar_processamento,
                                            fg_color=COR_PRINCIPAL, hover_color=COR_HOVER, height=50, 
                                            corner_radius=8, font=ctk.CTkFont(size=15, weight="bold"))
-        self.btn_processar.grid(row=2, column=0, padx=40, pady=10)
+        self.btn_processar.grid(row=1, column=0, padx=40, pady=40)
 
         self.progress = ctk.CTkProgressBar(self, orientation="horizontal", progress_color=COR_PRINCIPAL, width=300)
         self.progress.set(0)
@@ -157,16 +151,14 @@ class AppIngecon(ctk.CTk):
             ws.row_dimensions[r].height = 25.5
             ws.cell(row=r, column=4).value = ws.cell(row=r, column=7).value = "X"
             if r > 6:
-                for c in range(1, 14):
+                for c in range(1, 15):
                     src, tgt = ws.cell(row=6, column=c), ws.cell(row=r, column=c)
                     if src.has_style: tgt._style = copy(src._style)
         n_inicio = 6 + num_itens
         if quadro: ws.merge_cells(start_row=n_inicio, start_column=quadro['min_col'], end_row=n_inicio, end_column=quadro['max_col'])
         return n_inicio
 
-    def verificar_duplicidade_em_rede(self, codigo, modo_teste):
-        if modo_teste: return None
-        
+    def verificar_duplicidade_em_rede(self, codigo):
         c = str(codigo).strip()
         if not c: return None
         for p in PASTAS_VERIFICACAO:
@@ -182,7 +174,9 @@ class AppIngecon(ctk.CTk):
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
         cod_p, acab_p, desc_p = self.limpar(pai[1]), self.limpar(pai[2]), self.limpar(pai[3])
         acab_real = acab_p.strip(" _-")
+        
         tit = f"{cod_p}_{acab_real} - {desc_p}" if acab_real else f"{cod_p} - {desc_p}"
+        
         self.tratar_cabecalho_a1(ws, id_proj); self.escrever_seguro(ws, 'B3', tit)
         try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
         except: ws['A3'].value = qtd_tot
@@ -206,18 +200,18 @@ class AppIngecon(ctk.CTk):
                 ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(str(m_l))
                 ws.cell(row=r, column=11).value = "SEC-LAM" if tem_fita else "SEC"
                 ws.cell(row=r, column=12).value = d_l
-                ws.cell(row=r, column=13).value = self.converter_para_numero(item.get(1, "")); row_idx += 1
+                ws.cell(row=r, column=13).value = self.converter_para_numero(item.get(1, ""))
+                row_idx += 1
         txt_q = f"PROJETO DE REFERÊNCIA: {id_proj}"
         self.escrever_seguro(ws, f"A{l_obs}", txt_q, Alignment(horizontal='left', vertical='center'))
         nome_f = re.sub(r'[\\/*?:\u0022<>|]', '', tit); wb.save(os.path.join(pasta, f"{nome_f}.xlsm"))
 
     def iniciar_processamento(self):
-        modo_teste = self.chk_teste.get()
         self.btn_processar.configure(state="disabled")
-        self.progress.grid(row=3, column=0, padx=20, pady=10); self.progress.start()
-        threading.Thread(target=self.core_processamento, args=(modo_teste,), daemon=True).start()
+        self.progress.grid(row=2, column=0, padx=20, pady=10); self.progress.start()
+        threading.Thread(target=self.core_processamento, daemon=True).start()
 
-    def core_processamento(self, modo_teste):
+    def core_processamento(self):
         try:
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
             
@@ -233,11 +227,7 @@ class AppIngecon(ctk.CTk):
             MARCAS = {"ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"}
             marca = next((v for k,v in MARCAS.items() if k in id_p), "Outros")
             
-            if modo_teste == 1:
-                pasta = os.path.join(os.path.expanduser("~/Desktop"), "Testes_Ingecon", marca, id_p)
-            else:
-                pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), marca, id_p)
-                
+            pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), marca, id_p)
             if not os.path.exists(pasta): os.makedirs(pasta)
             
             molde = self.resource_path('planilha_molde.xlsm')
@@ -248,7 +238,9 @@ class AppIngecon(ctk.CTk):
             
             def f_valido(f):
                 c, a, d, mc = self.limpar(f[1]), str(f[2]).upper(), str(f[3]).upper(), self.limpar(f[14])
-                if '*' in a or 'CORTE' in a or "LAMINA MADEIRA" in d or "LAMINA MADEIRA" in mc: return False
+                if 'CORTE' in a or "LAMINA MADEIRA" in d or "LAMINA MADEIRA" in mc: return False
+                if '*' in a and not c.startswith('11'): return False
+                
                 if "LAMINADO FORM" in d or "LAMINADO FORM" in mc: return c.startswith(('11', '15'))
                 if mc.startswith("92"): return c.startswith(('11', '15')) if any(m in d for m in ["KRION", "CORIAN", "DURASEIN"]) else False
                 return c.startswith(('11', '15')) and not any(x in mc for x in ["9172", "93"])
@@ -264,12 +256,11 @@ class AppIngecon(ctk.CTk):
             for nv_p, info in cons.items():
                 cod_p = self.limpar(info['pai'][1])
                 
-                cam_net = self.verificar_duplicidade_em_rede(cod_p, modo_teste)
+                cam_net = self.verificar_duplicidade_em_rede(cod_p)
                 if cam_net: dups.append((cod_p, cam_net)); continue
                 
                 descend = df[df[0].str.startswith(nv_p + ".")].copy()
                 
-                # --- PASSO 1: Mapear todos os Sub-Blocos (Regra 15 e Prensados) ---
                 block_roots = {}
                 for _, r in descend.iterrows():
                     nv, cod, desc, acab = self.limpar(r[0]), self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
@@ -291,7 +282,6 @@ class AppIngecon(ctk.CTk):
                             'isp': isp
                         }
 
-                # --- PASSO 2: Distribuir os Itens nas Suas Respectivas Pastas ---
                 bloco_avulso = {'tipo': 'normal', 'itens': []}
                 skip_prefix = None
                 
@@ -303,7 +293,7 @@ class AppIngecon(ctk.CTk):
                     else:
                         skip_prefix = None
                         
-                    if '*' in acab or 'CORTE' in acab: 
+                    if 'CORTE' in acab or ('*' in acab and not cod.startswith('11')): 
                         skip_prefix = nv + "."
                         continue
                         
@@ -315,17 +305,11 @@ class AppIngecon(ctk.CTk):
                     add_as_item = not is_block_root
                             
                     if add_as_item and f_valido(r):
-                        # Transformamos a linha num DICIONÁRIO destravado para garantir que o +5 seja salvo corretamente
                         ic = r.copy().to_dict() 
                         
-                        # =========================================================================
-                        # REGRA +5 (Comprimento e Largura) PARA KRION, DURASEIN, CORIAN, TS
-                        # =========================================================================
                         is_in_prensado = parent_block and parent_block['isp']
                         
-                        # A regra NÃO APLICA para os itens que estão dentro de Prensado
                         if not is_in_prensado:
-                            # Busca nas colunas de Acabamento(2), Descrição(3) e Material(14)
                             texto_busca = f"{str(ic.get(2, ''))} {str(ic.get(3, ''))} {str(ic.get(14, ''))}".upper()
                             
                             tem_mat_especial = any(m in texto_busca for m in ["KRION", "DURASEIN", "CORIAN"])
@@ -333,18 +317,16 @@ class AppIngecon(ctk.CTk):
                                 tem_mat_especial = True
                                 
                             if tem_mat_especial:
-                                for idx_dim in [8, 10, 15, 16]: # Índices de Comp Bruto/Final e Largura Bruto/Final
+                                for idx_dim in [8, 10, 15, 16]: 
                                     if idx_dim in ic:
                                         val_dim = str(ic[idx_dim]).strip()
                                         if val_dim and val_dim not in ['-', '=']:
                                             try:
                                                 v_num = float(val_dim.replace(',', '.'))
                                                 novo_val = v_num + 5
-                                                # Salva o valor atualizado e destravado no dicionário
                                                 ic[idx_dim] = str(int(novo_val)) if novo_val.is_integer() else str(novo_val).replace('.', ',')
                                             except:
                                                 pass
-                        # =========================================================================
 
                         if parent_block:
                             ic['q_unitaria_fatorada'] = float(self.converter_para_numero(r[5]) or 0) * parent_block['qf']
@@ -354,7 +336,6 @@ class AppIngecon(ctk.CTk):
                                 ic['q_unitaria_fatorada'] = float(self.converter_para_numero(r[5]) or 0)
                                 bloco_avulso['itens'].append(ic)
                 
-                # --- PASSO 3: Consolidar para o Excel ---
                 if bloco_avulso['itens']:
                     info['blocos'].append(bloco_avulso)
                     
