@@ -20,7 +20,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.51"
+VERSAO_ATUAL = "2.0.53"
 
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS\PLANOS DE CORTE 2026")
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
@@ -174,9 +174,7 @@ class AppIngecon(ctk.CTk):
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
         cod_p, acab_p, desc_p = self.limpar(pai[1]), self.limpar(pai[2]), self.limpar(pai[3])
         acab_real = acab_p.strip(" _-")
-        
         tit = f"{cod_p}_{acab_real} - {desc_p}" if acab_real else f"{cod_p} - {desc_p}"
-        
         self.tratar_cabecalho_a1(ws, id_proj); self.escrever_seguro(ws, 'B3', tit)
         try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
         except: ws['A3'].value = qtd_tot
@@ -223,24 +221,24 @@ class AppIngecon(ctk.CTk):
                 raise Exception("Nao foi encontrado Código Pai verificar se a opção Exibir Selecionado esta ativada no PDM")
             
             id_p = cod_b2.upper()
-
             MARCAS = {"ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"}
             marca = next((v for k,v in MARCAS.items() if k in id_p), "Outros")
             
             pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), marca, id_p)
             if not os.path.exists(pasta): os.makedirs(pasta)
             
-            molde = self.resource_path('planilha_molde.xlsm')
+            molde = DIRETORIO_SISTEMA / "planilha_molde.xlsm"
+            if not molde.exists():
+                raise Exception(f"Arquivo molde nao encontrado na rede:\n{molde}")
+            
             col0 = [str(x).strip() for x in df[0] if str(x).strip()]
             min_d = min(x.count('.') for x in col0)
-            
             niv_pai = min_d if (self.limpar(df.iloc[1, 1]).startswith(('11', '15'))) else min_d + 1
             
             def f_valido(f):
                 c, a, d, mc = self.limpar(f[1]), str(f[2]).upper(), str(f[3]).upper(), self.limpar(f[14])
                 if 'CORTE' in a or "LAMINA MADEIRA" in d or "LAMINA MADEIRA" in mc: return False
                 if '*' in a and not c.startswith('11'): return False
-                
                 if "LAMINADO FORM" in d or "LAMINADO FORM" in mc: return c.startswith(('11', '15'))
                 if mc.startswith("92"): return c.startswith(('11', '15')) if any(m in d for m in ["KRION", "CORIAN", "DURASEIN"]) else False
                 return c.startswith(('11', '15')) and not any(x in mc for x in ["9172", "93"])
@@ -253,71 +251,57 @@ class AppIngecon(ctk.CTk):
                     cons[nv]['qtd_pai_total'] += float(self.converter_para_numero(r[5]) or 0)
             
             dups = []
+            processar_list = []
+            
+            # --- FASE 1: VERIFICAÇÃO PRÉVIA DE DUPLICADOS ---
             for nv_p, info in cons.items():
                 cod_p = self.limpar(info['pai'][1])
-                
                 cam_net = self.verificar_duplicidade_em_rede(cod_p)
-                if cam_net: dups.append((cod_p, cam_net)); continue
-                
+                if cam_net: 
+                    dups.append(cod_p)
+                else:
+                    processar_list.append((nv_p, info))
+            
+            # BLOQUEIO: Se tiver duplicados, exibe o aviso ANTES de processar e espera o usuário fechar
+            if dups:
+                lista_dups = "\n".join(dups)
+                msg_aviso = f"{len(dups)} planilhas ja foram criadas anteriormente e não serão criadas novamente:\n\n{lista_dups}"
+                # Chamada direta síncrona para travar o código aqui
+                messagebox.showwarning("Peças Repetidas", msg_aviso)
+
+            # --- FASE 2: GERAÇÃO DAS NOVAS ---
+            for nv_p, info in processar_list:
+                cod_p = self.limpar(info['pai'][1])
                 descend = df[df[0].str.startswith(nv_p + ".")].copy()
-                
                 block_roots = {}
                 for _, r in descend.iterrows():
                     nv, cod, desc, acab = self.limpar(r[0]), self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
-                    
                     is15 = cod_p.startswith('15') and cod.startswith('15') and nv.count('.') > niv_pai
                     isp = "PRENSADO" in desc or cod == "1152032" or "PRLA" in acab
-                    
                     if is15 or isp:
                         strict_prefixes = [p for p in block_roots.keys() if nv.startswith(p + ".")]
                         parent_qf = block_roots[max(strict_prefixes, key=len)]['qf'] if strict_prefixes else 1.0
                         my_qf = float(self.converter_para_numero(r[5]) or 1) * parent_qf
-                        
-                        block_roots[nv] = {
-                            'tipo': 'prensado', 
-                            'prensado_info': r, 
-                            'itens': [], 
-                            'qf': my_qf,
-                            'is15': is15,
-                            'isp': isp
-                        }
+                        block_roots[nv] = {'tipo': 'prensado', 'prensado_info': r, 'itens': [], 'qf': my_qf, 'is15': is15, 'isp': isp}
 
                 bloco_avulso = {'tipo': 'normal', 'itens': []}
                 skip_prefix = None
-                
                 for _, r in descend.iterrows():
                     nv, cod, desc, acab = self.limpar(r[0]), self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
-                    
-                    if skip_prefix and nv.startswith(skip_prefix):
-                        continue
-                    else:
-                        skip_prefix = None
-                        
+                    if skip_prefix and nv.startswith(skip_prefix): continue
+                    else: skip_prefix = None
                     if 'CORTE' in acab or ('*' in acab and not cod.startswith('11')): 
                         skip_prefix = nv + "."
                         continue
-                        
                     strict_prefixes = [p for p in block_roots.keys() if nv.startswith(p + ".")]
                     parent_block = block_roots[max(strict_prefixes, key=len)] if strict_prefixes else None
-                    
-                    is_block_root = nv in block_roots
-                    
-                    add_as_item = not is_block_root
-                            
-                    if add_as_item and f_valido(r):
+                    if not (nv in block_roots) and f_valido(r):
                         ic = r.copy().to_dict() 
-                        
-                        is_in_prensado = parent_block and parent_block['isp']
-                        
-                        if not is_in_prensado:
+                        if not (parent_block and parent_block['isp']):
                             texto_busca = f"{str(ic.get(2, ''))} {str(ic.get(3, ''))} {str(ic.get(14, ''))}".upper()
-                            
-                            tem_mat_especial = any(m in texto_busca for m in ["KRION", "DURASEIN", "CORIAN"])
-                            if not tem_mat_especial and re.search(r'\bTS\b', texto_busca):
-                                tem_mat_especial = True
-                                
+                            tem_mat_especial = any(m in texto_busca for m in ["KRION", "DURASEIN", "CORIAN"]) or re.search(r'\bTS\b', texto_busca)
                             if tem_mat_especial:
-                                for idx_dim in [8, 10, 15, 16]: 
+                                for idx_dim in [8, 10, 15, 16]:
                                     if idx_dim in ic:
                                         val_dim = str(ic[idx_dim]).strip()
                                         if val_dim and val_dim not in ['-', '=']:
@@ -325,34 +309,22 @@ class AppIngecon(ctk.CTk):
                                                 v_num = float(val_dim.replace(',', '.'))
                                                 novo_val = v_num + 5
                                                 ic[idx_dim] = str(int(novo_val)) if novo_val.is_integer() else str(novo_val).replace('.', ',')
-                                            except:
-                                                pass
-
+                                            except: pass
                         if parent_block:
                             ic['q_unitaria_fatorada'] = float(self.converter_para_numero(r[5]) or 0) * parent_block['qf']
                             parent_block['itens'].append(ic)
-                        else:
-                            if nv.count('.') == niv_pai + 1:
-                                ic['q_unitaria_fatorada'] = float(self.converter_para_numero(r[5]) or 0)
-                                bloco_avulso['itens'].append(ic)
+                        elif nv.count('.') == niv_pai + 1:
+                            ic['q_unitaria_fatorada'] = float(self.converter_para_numero(r[5]) or 0)
+                            bloco_avulso['itens'].append(ic)
                 
-                if bloco_avulso['itens']:
-                    info['blocos'].append(bloco_avulso)
-                    
+                if bloco_avulso['itens']: info['blocos'].append(bloco_avulso)
                 for br in block_roots.values():
-                    if br['itens']: 
-                        info['blocos'].append(br)
-
-                if info['blocos']:
-                    self.gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_pai_total'], molde, pasta)
+                    if br['itens']: info['blocos'].append(br)
+                if info['blocos']: self.gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_pai_total'], molde, pasta)
                 else:
                     ic = info['pai'].copy().to_dict(); ic['q_unitaria_fatorada'] = 1.0
                     self.gerar_arquivo_excel(info['pai'], [{'tipo': 'normal', 'itens': [ic]}], id_p, info['qtd_pai_total'], molde, pasta)
 
-            if dups:
-                txt = "PROJETO(S) JÁ GERADO(S) ANTERIORMENTE\n\n" + "".join([f"{c} -\n{m}\n" for c,m in dups])
-                with open(Path(os.path.expanduser("~/Desktop")) / "PROJETO_EXISTENTE.txt", "w", encoding="utf-8") as f: f.write(txt)
-                self.after(0, lambda: messagebox.showwarning("Existentes", f"Códigos já gerados. Verifique o TXT no Desktop."))
             self.after(0, self.sucesso_final, pasta)
         except Exception as e: self.after(0, self.erro_final, str(e))
 
