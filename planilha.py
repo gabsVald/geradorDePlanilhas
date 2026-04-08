@@ -20,16 +20,13 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.31"
+VERSAO_ATUAL = "2.0.42"
 
-# Pastas RAIZ
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS\PLANOS DE CORTE 2026")
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
 
-# Pastas para verificação de duplicidade (Busca em Rede)
 PASTAS_VERIFICACAO = [
     Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS"),
-    DIRETORIO_RAIZ_PLANILHAS
 ]
 
 ARQ_VERSAO = DIRETORIO_SISTEMA / "version.txt"
@@ -44,7 +41,7 @@ class AppIngecon(ctk.CTk):
         super().__init__()
         self.verificar_atualizacao()
         self.title(f"Ingecon - Gerador de Planilhas V{VERSAO_ATUAL}")
-        self.geometry("480x320")
+        self.geometry("480x360") 
         self.configure(fg_color="#f5f5f5") 
         self.grid_columnconfigure(0, weight=1)
 
@@ -56,10 +53,16 @@ class AppIngecon(ctk.CTk):
                                          font=ctk.CTkFont(size=22, weight="bold"), text_color="white")
         self.label_titulo.grid(row=0, column=0, pady=20)
 
+        # CHECKBOX DE MODO TESTE
+        self.chk_teste = ctk.CTkCheckBox(self, text="Modo de Teste (Salvar no Desktop)", 
+                                         fg_color=COR_PRINCIPAL, hover_color=COR_HOVER,
+                                         font=ctk.CTkFont(size=13, weight="bold"))
+        self.chk_teste.grid(row=1, column=0, pady=(0, 15))
+
         self.btn_processar = ctk.CTkButton(self, text="Colar - Gerar Planilhas", command=self.iniciar_processamento,
                                            fg_color=COR_PRINCIPAL, hover_color=COR_HOVER, height=50, 
                                            corner_radius=8, font=ctk.CTkFont(size=15, weight="bold"))
-        self.btn_processar.grid(row=2, column=0, padx=40, pady=30)
+        self.btn_processar.grid(row=2, column=0, padx=40, pady=10)
 
         self.progress = ctk.CTkProgressBar(self, orientation="horizontal", progress_color=COR_PRINCIPAL, width=300)
         self.progress.set(0)
@@ -74,8 +77,7 @@ class AppIngecon(ctk.CTk):
         except: pass
 
     def executar_patch(self):
-        c_exe = sys.executable
-        n_exe = os.path.basename(c_exe)
+        c_exe, n_exe = sys.executable, os.path.basename(sys.executable)
         bat = f'@echo off\n:loop\ntaskkill /f /im "{n_exe}" >nul 2>&1\ndel /f /q "{c_exe}" >nul 2>&1\nif exist "{c_exe}" (timeout /t 1 >nul\ngoto loop)\ncopy /y "{EXE_SERVIDOR}" "{c_exe}"\nstart "" "{c_exe}"\nexit'
         p_bat = Path(os.environ["TEMP"]) / "patch_ingecon.bat"
         with open(p_bat, "w") as f: f.write(bat)
@@ -85,19 +87,17 @@ class AppIngecon(ctk.CTk):
         if hasattr(sys, '_MEIPASS'):
             p_interno = Path(sys._MEIPASS) / relative_path
             if p_interno.exists(): return str(p_interno)
-        p_exe = Path(sys.executable).parent / relative_path
-        if p_exe.exists(): return str(p_exe)
         return str(Path(os.getcwd()) / relative_path)
 
     def escrever_seguro(self, ws, coord, valor, alinhamento=None):
         try:
             cell = ws[coord]
             if cell.__class__.__name__ == 'MergedCell':
-                for range_mesclado in ws.merged_cells.ranges:
-                    if coord in range_mesclado:
-                        master = ws.cell(row=range_mesclado.min_row, column=range_mesclado.min_col)
-                        master.value = valor
-                        if alinhamento: master.alignment = alinhamento
+                for r in ws.merged_cells.ranges:
+                    if coord in r:
+                        m = ws.cell(row=r.min_row, column=r.min_col)
+                        m.value = valor
+                        if alinhamento: m.alignment = alinhamento
                         return
             else:
                 cell.value = valor
@@ -111,51 +111,31 @@ class AppIngecon(ctk.CTk):
 
     def converter_para_numero(self, valor):
         limpo = self.limpar(valor)
-        if not limpo: return None
-        if limpo in ["-", "="]: return limpo
+        if not limpo or limpo in ["-", "="]: return limpo
         try:
             v_aj = limpo.replace(',', '.')
-            if '.' in v_aj:
-                val_float = float(v_aj)
-                return int(val_float + 0.5) if val_float >= 0 else int(val_float - 0.5)
-            return int(v_aj)
+            val_float = float(v_aj)
+            return int(val_float + 0.5) if val_float >= 0 else int(val_float - 0.5)
         except: return limpo
 
     def tratar_cabecalho_a1(self, ws, id_projeto):
-        logos_imagem = {
-            "ARO": "amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", 
-            "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", 
-            "ING": "ingecon", "MCD": "mcdonalds", "PER": "pernambucanas", "REN": "renner", 
-            "TMS": "Tramontina", "TRA": "tramontinaPDV"
-        }
+        logos_imagem = {"ARO": "amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "ingecon", "MCD": "mcdonalds", "PER": "pernambucanas", "REN": "renner", "TMS": "Tramontina", "TRA": "tramontinaPDV"}
         marcas_texto = {"ZAR": "ZARA", "ZFR": "ZAFFARI", "SEP": "SEPHORA", "PRO": "PROTÓTIPO"}
-        
         id_up = str(id_projeto).upper()
-        for sigla, nome_texto in marcas_texto.items():
+        for sigla, nome in marcas_texto.items():
             if sigla in id_up:
-                self.escrever_seguro(ws, 'A1', nome_texto, Alignment(horizontal='center', vertical='center'))
-                ws['A1'].font = Font(size=22, bold=True)
-                return
-
-        for sigla, arq_nome in logos_imagem.items():
+                self.escrever_seguro(ws, 'A1', nome, Alignment(horizontal='center', vertical='center'))
+                ws['A1'].font = Font(size=22, bold=True); return
+        for sigla, arq in logos_imagem.items():
             if sigla in id_up:
-                path_logo = self.resource_path(f"logos/{arq_nome}.png")
-                if Path(path_logo).exists():
-                    img = OpenpyxlImage(path_logo)
-                    img.width, img.height = 152, 42 
-                    ws.row_dimensions[1].height = 33 
-                    ws.add_image(img, 'A1')
-                    return
-
-        path_ingecon = self.resource_path("logos/ingecon.png")
-        if Path(path_ingecon).exists():
-            img = OpenpyxlImage(path_ingecon)
-            img.width, img.height = 152, 42
-            ws.row_dimensions[1].height = 33
-            ws.add_image(img, 'A1')
-        else:
-            self.escrever_seguro(ws, 'A1', id_projeto, Alignment(horizontal='center', vertical='center'))
-            ws['A1'].font = Font(size=22, bold=True)
+                path = self.resource_path(f"logos/{arq}.png")
+                if Path(path).exists():
+                    img = OpenpyxlImage(path); img.width, img.height = 152, 42
+                    ws.row_dimensions[1].height = 33; ws.add_image(img, 'A1'); return
+        path_ing = self.resource_path("logos/ingecon.png")
+        if Path(path_ing).exists():
+            img = OpenpyxlImage(path_ing); img.width, img.height = 152, 42
+            ws.row_dimensions[1].height = 33; ws.add_image(img, 'A1')
 
     def limpar_material_rigoroso(self, texto):
         if not texto: return ""
@@ -164,242 +144,234 @@ class AppIngecon(ctk.CTk):
         return re.sub(r'\s+', ' ', t).strip(' -')
 
     def ajustar_molde_elastico(self, ws, num_itens):
-        padrao = 3
-        l_rodape = 9
-        quadro = None
+        padrao, l_rodape, quadro = 3, 9, None
         for m in list(ws.merged_cells.ranges):
             if m.min_row >= l_rodape:
-                if m.min_row == l_rodape: 
-                    quadro = {'min_col': m.min_col, 'max_col': m.max_col, 'max_row': m.max_row}
+                if m.min_row == l_rodape: quadro = {'min_col': m.min_col, 'max_col': m.max_col, 'max_row': m.max_row}
                 ws.unmerge_cells(str(m))
-        if quadro and quadro['max_row'] > l_rodape:
-            ws.delete_rows(l_rodape + 1, quadro['max_row'] - l_rodape)
+        if quadro and quadro['max_row'] > l_rodape: ws.delete_rows(l_rodape + 1, quadro['max_row'] - l_rodape)
         diff = num_itens - padrao
         if diff > 0: ws.insert_rows(l_rodape, diff)
         elif diff < 0: ws.delete_rows(l_rodape + diff, abs(diff))
         for r in range(6, 6 + num_itens):
             ws.row_dimensions[r].height = 25.5
-            ws.cell(row=r, column=4).value = "X"
-            ws.cell(row=r, column=7).value = "X"
+            ws.cell(row=r, column=4).value = ws.cell(row=r, column=7).value = "X"
             if r > 6:
                 for c in range(1, 14):
                     src, tgt = ws.cell(row=6, column=c), ws.cell(row=r, column=c)
                     if src.has_style: tgt._style = copy(src._style)
         n_inicio = 6 + num_itens
-        if quadro:
-            ws.merge_cells(start_row=n_inicio, start_column=quadro['min_col'], end_row=n_inicio, end_column=quadro['max_col'])
-            ws.row_dimensions[n_inicio].height = 36.75
+        if quadro: ws.merge_cells(start_row=n_inicio, start_column=quadro['min_col'], end_row=n_inicio, end_column=quadro['max_col'])
         return n_inicio
 
-    def verificar_duplicidade_em_rede(self, codigo):
-        codigo_limpo = str(codigo).strip()
-        if not codigo_limpo: return None
-        for pasta_raiz in PASTAS_VERIFICACAO:
-            if not pasta_raiz.exists(): continue
-            for root, dirs, files in os.walk(pasta_raiz):
+    def verificar_duplicidade_em_rede(self, codigo, modo_teste):
+        if modo_teste: return None
+        
+        c = str(codigo).strip()
+        if not c: return None
+        for p in PASTAS_VERIFICACAO:
+            if not p.exists(): continue
+            for root, dirs, files in os.walk(p):
                 for f in files:
-                    if f.startswith(codigo_limpo) and f.lower().endswith(('.xlsx', '.ods', '.xlsm')):
-                        return os.path.join(root, f)
+                    if f.startswith(c) and f.lower().endswith(('.xlsx', '.ods', '.xlsm')): return os.path.join(root, f)
         return None
 
     def gerar_arquivo_excel(self, pai, blocos, id_proj, qtd_tot, molde, pasta):
         wb = load_workbook(molde, keep_vba=True); ws = wb.active
         total_linhas = sum(len(b['itens']) + (1 if b['tipo'] == 'prensado' else 0) for b in blocos)
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
-        
-        cod_p = self.limpar(pai[1])
-        acab_p = self.limpar(pai[2])
-        desc_p = self.limpar(pai[3])
+        cod_p, acab_p, desc_p = self.limpar(pai[1]), self.limpar(pai[2]), self.limpar(pai[3])
         acab_real = acab_p.strip(" _-")
-        tit_celula = f"{cod_p}_{acab_real} - {desc_p}" if acab_real else f"{cod_p} - {desc_p}"
-        
-        self.tratar_cabecalho_a1(ws, id_projeto=id_proj)
-        self.escrever_seguro(ws, 'B3', tit_celula)
+        tit = f"{cod_p}_{acab_real} - {desc_p}" if acab_real else f"{cod_p} - {desc_p}"
+        self.tratar_cabecalho_a1(ws, id_proj); self.escrever_seguro(ws, 'B3', tit)
         try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
         except: ws['A3'].value = qtd_tot
-
-        self.escrever_seguro(ws, 'M2', datetime.now().strftime('%d/%m/%Y'))
-        blocos_ordenados = sorted(blocos, key=lambda x: 0 if x['tipo'] == 'normal' else 1)
-
+        ws['M2'].value = datetime.now().strftime('%d/%m/%Y')
+        blocos_ord = sorted(blocos, key=lambda x: 0 if x['tipo'] == 'normal' else 1)
         row_idx = 6
-        for bloco in blocos_ordenados:
-            if bloco['tipo'] == 'prensado':
+        for b in blocos_ord:
+            if b['tipo'] == 'prensado':
                 ws.row_dimensions[row_idx].height = 15.75
-                p_data = bloco['prensado_info']
-                ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
-                cell_h = ws.cell(row=row_idx, column=2)
-                cell_h.value = f"{self.limpar(p_data[1])} - {self.limpar(p_data[3])}"
-                cell_h.font = Font(bold=True, size=15)
-                cell_h.alignment = Alignment(horizontal='center', vertical='center')
-                row_idx += 1
-
-            for item in bloco['itens']:
-                r = row_idx
-                desc_full = self.limpar(item[3])
-                d_l, m_l_orig = (desc_full.split(" - ", 1) if " - " in desc_full else ("-", desc_full))
-                comp_fb, larg_fb = self.limpar(item[15]), self.limpar(item[16])
-                tem_fita = any(x in [comp_fb, larg_fb] for x in ['-', '='])
-                q_unit = item['q_unitaria_fatorada']
-                ws.cell(row=r, column=1).value = f"={float(q_unit)}*A3"
-                
+                p_d = b['prensado_info']; ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
+                cell_h = ws.cell(row=row_idx, column=2); cell_h.value = f"{self.limpar(p_d[1])} - {self.limpar(p_d[3])}"
+                cell_h.font = Font(bold=True, size=15); cell_h.alignment = Alignment(horizontal='center', vertical='center'); row_idx += 1
+            for item in b['itens']:
+                r = row_idx; desc_f = self.limpar(item[3])
+                d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
+                tem_fita = any(x in [self.limpar(item.get(15, "")), self.limpar(item.get(16, ""))] for x in ['-', '='])
+                ws.cell(row=r, column=1).value = f"={float(item['q_unitaria_fatorada'])}*A3"
                 for col, idx in [(2,15), (3,8), (5,16), (6,10), (8,12)]:
-                    v = self.converter_para_numero(item[idx])
-                    c = ws.cell(row=r, column=col)
-                    c.value = v
-                    if isinstance(v, (int, float)): c.number_format = '0' 
-
-                ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(str(m_l_orig))
+                    v = self.converter_para_numero(item.get(idx, "")); c = ws.cell(row=r, column=col); c.value = v
+                    if isinstance(v, (int, float)): c.number_format = '0'
+                ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(str(m_l))
                 ws.cell(row=r, column=11).value = "SEC-LAM" if tem_fita else "SEC"
                 ws.cell(row=r, column=12).value = d_l
-                
-                cod_val = self.limpar(item[1])
-                cell_cod = ws.cell(row=r, column=13)
-                try:
-                    if cod_val.isdigit(): cell_cod.value = int(cod_val)
-                    else: cell_cod.value = float(cod_val.replace(',', '.'))
-                except: cell_cod.value = cod_val
-                row_idx += 1
-        
-        try:
-            fonte_n = InlineFont(rFont='Arial Black', sz=18, b=False)
-            fonte_b = InlineFont(rFont='Arial Black', sz=18, b=True)
-            texto_q = CellRichText(TextBlock(font=fonte_n, text="PROJETO DE REFERÊNCIA: "), TextBlock(font=fonte_b, text=id_proj))
-        except: texto_q = f"PROJETO DE REFERÊNCIA: {id_proj}"
-
-        self.escrever_seguro(ws, f"A{l_obs}", texto_q, Alignment(horizontal='left', vertical='center'))
-        
-        nome_arquivo = re.sub(r'[\\/*?:\u0022<>|]', '', tit_celula)
-        wb.save(os.path.join(pasta, f"{nome_arquivo}.xlsm"))
+                ws.cell(row=r, column=13).value = self.converter_para_numero(item.get(1, "")); row_idx += 1
+        txt_q = f"PROJETO DE REFERÊNCIA: {id_proj}"
+        self.escrever_seguro(ws, f"A{l_obs}", txt_q, Alignment(horizontal='left', vertical='center'))
+        nome_f = re.sub(r'[\\/*?:\u0022<>|]', '', tit); wb.save(os.path.join(pasta, f"{nome_f}.xlsm"))
 
     def iniciar_processamento(self):
+        modo_teste = self.chk_teste.get()
         self.btn_processar.configure(state="disabled")
         self.progress.grid(row=3, column=0, padx=20, pady=10); self.progress.start()
-        threading.Thread(target=self.core_processamento, daemon=True).start()
+        threading.Thread(target=self.core_processamento, args=(modo_teste,), daemon=True).start()
 
-    def core_processamento(self):
+    def core_processamento(self, modo_teste):
         try:
-            # Captura o clipboard
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
             
-            # Validação anti-erro caso o clipboard esteja vazio ou mal formatado
-            if df.empty or df.shape[1] < 2:
+            if df.shape[0] < 2 or df.shape[1] < 2:
                 raise Exception("Nao foi encontrado Código Pai verificar se a opção Exibir Selecionado esta ativada no PDM")
-
-            df[0] = df[0].str.strip()
             
-            # Identifica o código primordial na linha 1 ou 2
-            pidx_inicio = 1 if str(df.iloc[0,1]).upper() in ["CÓDIGO", "CODIGO"] else 0
-            primeiro = str(df.iloc[pidx_inicio, 1]).strip()
-            
-            # REGRA: Deve conter letra obrigatoriamente (tipo ZAR421..., REN...)
-            if not primeiro or not re.search(r'[A-Za-z]', primeiro): 
+            cod_b2 = str(df.iloc[1, 1]).strip()
+            if not cod_b2 or not re.search(r'[A-Za-z]', cod_b2):
                 raise Exception("Nao foi encontrado Código Pai verificar se a opção Exibir Selecionado esta ativada no PDM")
+            
+            id_p = cod_b2.upper()
 
-            id_proj = "PROJETO"
-            for v in df.values.flatten():
-                if re.search(r'^[A-Z]{2,}\d+', str(v).strip().upper()): id_proj = str(v).strip().upper(); break
+            MARCAS = {"ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"}
+            marca = next((v for k,v in MARCAS.items() if k in id_p), "Outros")
             
-            MARCAS_PASTAS = {"ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"}
-            nome_marca = "Outros"
-            for sigla, nome in MARCAS_PASTAS.items():
-                if sigla in id_proj.upper(): nome_marca = nome; break
-            
-            pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), nome_marca, id_proj)
+            if modo_teste == 1:
+                pasta = os.path.join(os.path.expanduser("~/Desktop"), "Testes_Ingecon", marca, id_p)
+            else:
+                pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), marca, id_p)
+                
             if not os.path.exists(pasta): os.makedirs(pasta)
-            molde = self.resource_path('planilha_molde.xlsm')
-
-            col0_strs = [str(x).strip() for x in df[0] if str(x).strip()]
-            min_dots = min(x.count('.') for x in col0_strs)
-            root_row = next((row for _, row in df.iterrows() if str(row[0]).strip().count('.') == min_dots), None)
             
-            root_cod = self.limpar(root_row[1])
-            is_root_prensado = "PRENSADO" in str(root_row[3]).upper() or root_cod == "1152032" or "PRLA" in str(root_row[2]).upper()
-            nivel_pai = min_dots if (root_cod.startswith(('11', '15')) or is_root_prensado) else min_dots + 1
-
+            molde = self.resource_path('planilha_molde.xlsm')
+            col0 = [str(x).strip() for x in df[0] if str(x).strip()]
+            min_d = min(x.count('.') for x in col0)
+            
+            niv_pai = min_d if (self.limpar(df.iloc[1, 1]).startswith(('11', '15'))) else min_d + 1
+            
             def f_valido(f):
                 c, a, d, mc = self.limpar(f[1]), str(f[2]).upper(), str(f[3]).upper(), self.limpar(f[14])
-                # Regra LAMINA MADEIRA
                 if '*' in a or 'CORTE' in a or "LAMINA MADEIRA" in d or "LAMINA MADEIRA" in mc: return False
                 if "LAMINADO FORM" in d or "LAMINADO FORM" in mc: return c.startswith(('11', '15'))
-                if mc.startswith("92"):
-                    return c.startswith(('11', '15')) if any(m in d for m in ["KRION", "CORIAN", "DURASEIN"]) else False
+                if mc.startswith("92"): return c.startswith(('11', '15')) if any(m in d for m in ["KRION", "CORIAN", "DURASEIN"]) else False
                 return c.startswith(('11', '15')) and not any(x in mc for x in ["9172", "93"])
-
-            consolidado = {}
-            for _, row in df.iterrows():
-                nv, cod, desc, acab = self.limpar(row[0]), self.limpar(row[1]), str(row[3]).upper(), str(row[2]).upper()
-                if '*' in acab or 'CORTE' in acab: continue
+            
+            cons = {}
+            for _, r in df.iterrows():
+                nv, cod = self.limpar(r[0]), self.limpar(r[1])
+                if cod.startswith(('11', '15')) and nv.count('.') == niv_pai:
+                    if nv not in cons: cons[nv] = {'pai': r, 'blocos': [], 'qtd_pai_total': 0}
+                    cons[nv]['qtd_pai_total'] += float(self.converter_para_numero(r[5]) or 0)
+            
+            dups = []
+            for nv_p, info in cons.items():
+                cod_p = self.limpar(info['pai'][1])
                 
-                # BLOQUEIO: Só cria a planilha principal (pai) se o código começar estritamente com 11 ou 15!
-                if cod.startswith(('11', '15')) and nv.count('.') == nivel_pai:
-                    if nv not in consolidado: consolidado[nv] = {'pai': row, 'blocos': [], 'qtd_pai_total': 0}
-                    consolidado[nv]['qtd_pai_total'] += float(self.converter_para_numero(row[5]) or 0)
-
-            lista_duplicados = []
-
-            for nv_pai, info in consolidado.items():
-                cod_pai_atual = self.limpar(info['pai'][1])
-                caminho_net = self.verificar_duplicidade_em_rede(cod_pai_atual)
+                cam_net = self.verificar_duplicidade_em_rede(cod_p, modo_teste)
+                if cam_net: dups.append((cod_p, cam_net)); continue
                 
-                if caminho_net:
-                    lista_duplicados.append((cod_pai_atual, caminho_net))
-                    continue 
-
-                descendentes = df[df[0].str.startswith(nv_pai + ".")].copy()
-                bloco_avulso = {'tipo': 'normal', 'itens': []}
-                cursor = 0
-                while cursor < len(descendentes):
-                    row = descendentes.iloc[cursor]
-                    nv, cod, desc, acab = self.limpar(row[0]), self.limpar(row[1]), str(row[3]).upper(), str(row[2]).upper()
+                descend = df[df[0].str.startswith(nv_p + ".")].copy()
+                
+                # --- PASSO 1: Mapear todos os Sub-Blocos (Regra 15 e Prensados) ---
+                block_roots = {}
+                for _, r in descend.iterrows():
+                    nv, cod, desc, acab = self.limpar(r[0]), self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
                     
-                    # Regra 15 dentro de 15 como bloco
-                    is_15_under_15 = cod_pai_atual.startswith('15') and cod.startswith('15') and nv.count('.') > nivel_pai
+                    is15 = cod_p.startswith('15') and cod.startswith('15') and nv.count('.') > niv_pai
                     isp = "PRENSADO" in desc or cod == "1152032" or "PRLA" in acab
                     
-                    if is_15_under_15 or isp:
-                        nb = {'tipo': 'prensado', 'prensado_info': row, 'itens': []}
-                        qf = float(self.converter_para_numero(row[5]) or 1)
-                        cursor += 1
-                        while cursor < len(descendentes):
-                            sub = descendentes.iloc[cursor]
-                            if not str(sub[0]).startswith(nv + "."): break
-                            if f_valido(sub):
-                                ic = sub.copy()
-                                ic['q_unitaria_fatorada'] = float(self.converter_para_numero(sub[5]) or 0) * qf
-                                nb['itens'].append(ic)
-                            cursor += 1
-                        if nb['itens']: info['blocos'].append(nb)
-                        continue
+                    if is15 or isp:
+                        strict_prefixes = [p for p in block_roots.keys() if nv.startswith(p + ".")]
+                        parent_qf = block_roots[max(strict_prefixes, key=len)]['qf'] if strict_prefixes else 1.0
+                        my_qf = float(self.converter_para_numero(r[5]) or 1) * parent_qf
+                        
+                        block_roots[nv] = {
+                            'tipo': 'prensado', 
+                            'prensado_info': r, 
+                            'itens': [], 
+                            'qf': my_qf,
+                            'is15': is15,
+                            'isp': isp
+                        }
+
+                # --- PASSO 2: Distribuir os Itens nas Suas Respectivas Pastas ---
+                bloco_avulso = {'tipo': 'normal', 'itens': []}
+                skip_prefix = None
+                
+                for _, r in descend.iterrows():
+                    nv, cod, desc, acab = self.limpar(r[0]), self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
                     
-                    if '*' in acab or 'CORTE' in acab:
-                        cursor += 1
-                        while cursor < len(descendentes) and str(descendentes.iloc[cursor][0]).startswith(nv + "."): cursor += 1
+                    if skip_prefix and nv.startswith(skip_prefix):
+                        continue
+                    else:
+                        skip_prefix = None
+                        
+                    if '*' in acab or 'CORTE' in acab: 
+                        skip_prefix = nv + "."
                         continue
                         
-                    if f_valido(row) and nv.count('.') == nivel_pai + 1:
-                        ic = row.copy(); ic['q_unitaria_fatorada'] = float(self.converter_para_numero(row[5]) or 0)
-                        bloco_avulso['itens'].append(ic)
-                    cursor += 1
+                    strict_prefixes = [p for p in block_roots.keys() if nv.startswith(p + ".")]
+                    parent_block = block_roots[max(strict_prefixes, key=len)] if strict_prefixes else None
+                    
+                    is_block_root = nv in block_roots
+                    
+                    add_as_item = not is_block_root
+                            
+                    if add_as_item and f_valido(r):
+                        # Transformamos a linha num DICIONÁRIO destravado para garantir que o +5 seja salvo corretamente
+                        ic = r.copy().to_dict() 
+                        
+                        # =========================================================================
+                        # REGRA +5 (Comprimento e Largura) PARA KRION, DURASEIN, CORIAN, TS
+                        # =========================================================================
+                        is_in_prensado = parent_block and parent_block['isp']
+                        
+                        # A regra NÃO APLICA para os itens que estão dentro de Prensado
+                        if not is_in_prensado:
+                            # Busca nas colunas de Acabamento(2), Descrição(3) e Material(14)
+                            texto_busca = f"{str(ic.get(2, ''))} {str(ic.get(3, ''))} {str(ic.get(14, ''))}".upper()
+                            
+                            tem_mat_especial = any(m in texto_busca for m in ["KRION", "DURASEIN", "CORIAN"])
+                            if not tem_mat_especial and re.search(r'\bTS\b', texto_busca):
+                                tem_mat_especial = True
+                                
+                            if tem_mat_especial:
+                                for idx_dim in [8, 10, 15, 16]: # Índices de Comp Bruto/Final e Largura Bruto/Final
+                                    if idx_dim in ic:
+                                        val_dim = str(ic[idx_dim]).strip()
+                                        if val_dim and val_dim not in ['-', '=']:
+                                            try:
+                                                v_num = float(val_dim.replace(',', '.'))
+                                                novo_val = v_num + 5
+                                                # Salva o valor atualizado e destravado no dicionário
+                                                ic[idx_dim] = str(int(novo_val)) if novo_val.is_integer() else str(novo_val).replace('.', ',')
+                                            except:
+                                                pass
+                        # =========================================================================
+
+                        if parent_block:
+                            ic['q_unitaria_fatorada'] = float(self.converter_para_numero(r[5]) or 0) * parent_block['qf']
+                            parent_block['itens'].append(ic)
+                        else:
+                            if nv.count('.') == niv_pai + 1:
+                                ic['q_unitaria_fatorada'] = float(self.converter_para_numero(r[5]) or 0)
+                                bloco_avulso['itens'].append(ic)
                 
-                if descendentes.empty or (not bloco_avulso['itens'] and not info['blocos']):
-                     ic = info['pai'].copy() 
-                     ic['q_unitaria_fatorada'] = 1.0
-                     bloco_avulso['itens'].append(ic)
+                # --- PASSO 3: Consolidar para o Excel ---
+                if bloco_avulso['itens']:
+                    info['blocos'].append(bloco_avulso)
+                    
+                for br in block_roots.values():
+                    if br['itens']: 
+                        info['blocos'].append(br)
 
-                if bloco_avulso['itens']: info['blocos'].insert(0, bloco_avulso)
-                if info['blocos']: self.gerar_arquivo_excel(info['pai'], info['blocos'], id_proj, info['qtd_pai_total'], molde, pasta)
+                if info['blocos']:
+                    self.gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_pai_total'], molde, pasta)
+                else:
+                    ic = info['pai'].copy().to_dict(); ic['q_unitaria_fatorada'] = 1.0
+                    self.gerar_arquivo_excel(info['pai'], [{'tipo': 'normal', 'itens': [ic]}], id_p, info['qtd_pai_total'], molde, pasta)
 
-            if lista_duplicados:
-                caminho_desktop = Path(os.path.expanduser("~/Desktop")) / "PROJETO_EXISTENTE.txt"
-                conteudo_txt = "PROJETO(S) JÁ GERADO(S) ANTERIORMENTE\n\n"
-                mensagem_popup = "Os seguintes códigos já possuem planilhas geradas:\n\n"
-                for cod, cam in lista_duplicados:
-                    conteudo_txt += f"{cod} -\n{cam}\n"
-                    mensagem_popup += f"• {cod}\n"
-                with open(caminho_desktop, "w", encoding="utf-8") as f:
-                    f.write(conteudo_txt)
-                self.after(0, lambda: messagebox.showwarning("Códigos Existentes", f"{mensagem_popup}\nUm arquivo TXT com os caminhos foi criado na sua Área de Trabalho."))
-
+            if dups:
+                txt = "PROJETO(S) JÁ GERADO(S) ANTERIORMENTE\n\n" + "".join([f"{c} -\n{m}\n" for c,m in dups])
+                with open(Path(os.path.expanduser("~/Desktop")) / "PROJETO_EXISTENTE.txt", "w", encoding="utf-8") as f: f.write(txt)
+                self.after(0, lambda: messagebox.showwarning("Existentes", f"Códigos já gerados. Verifique o TXT no Desktop."))
             self.after(0, self.sucesso_final, pasta)
         except Exception as e: self.after(0, self.erro_final, str(e))
 
