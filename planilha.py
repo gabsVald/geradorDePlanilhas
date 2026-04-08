@@ -18,7 +18,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.56"
+VERSAO_ATUAL = "2.0.63"
 
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS\PLANOS DE CORTE 2026")
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
@@ -29,6 +29,9 @@ PASTAS_VERIFICACAO = [
 
 ARQ_VERSAO = DIRETORIO_SISTEMA / "version.txt"
 EXE_SERVIDOR = DIRETORIO_SISTEMA / "Gerador_Planilhas_Ingecon.exe"
+
+DESKTOP_PATH = Path(os.path.join(os.path.expanduser("~"), "Desktop"))
+ARQ_REPETIDAS = DESKTOP_PATH / "planilhas_repetidas.txt"
 
 COR_PRINCIPAL = "#d32732"
 COR_HOVER = "#a81f28"
@@ -166,7 +169,7 @@ class AppIngecon(ctk.CTk):
                     if f.startswith(c) and f.lower().endswith(('.xlsx', '.ods', '.xlsm')): return os.path.join(root, f)
         return None
 
-    def gerar_arquivo_excel(self, pai, blocos, id_proj, qtd_tot, molde, pasta):
+    def gerar_arquivo_excel(self, pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_prensado):
         wb = load_workbook(molde, keep_vba=True); ws = wb.active
         total_linhas = sum(len(b['itens']) + (1 if b['tipo'] == 'prensado' else 0) for b in blocos)
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
@@ -183,9 +186,10 @@ class AppIngecon(ctk.CTk):
         except: ws['A3'].value = qtd_tot
         ws['M2'].value = datetime.now().strftime('%d/%m/%Y')
         
-        blocos_ord = sorted(blocos, key=lambda x: 0 if x['tipo'] == 'normal' else 1)
         row_idx = 6
-        for b in blocos_ord:
+        for b in sorted(blocos, key=lambda x: 0 if x['tipo'] == 'normal' else 1):
+            bloco_e_prensado = (b['tipo'] == 'prensado' or pai_is_prensado)
+            
             if b['tipo'] == 'prensado':
                 ws.row_dimensions[row_idx].height = 15.75
                 p_d = b['prensado_info']; ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
@@ -196,25 +200,21 @@ class AppIngecon(ctk.CTk):
                 r = row_idx; desc_f = self.limpar(item[3])
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
                 tem_fita = any(x in [self.limpar(item.get(15, "")), self.limpar(item.get(16, ""))] for x in ['-', '='])
-                
                 ws.cell(row=r, column=1).value = f"={float(item['q_unitaria_fatorada'])}*A3"
                 for col, idx in [(2,15), (3,8), (5,16), (6,10), (8,12)]:
                     v = self.converter_para_numero(item.get(idx, "")); c = ws.cell(row=r, column=col); c.value = v
                     if isinstance(v, (int, float)): c.number_format = '0'
-                
                 ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(str(m_l))
                 ws.cell(row=r, column=11).value = "SEC-LAM" if tem_fita else "SEC"
                 ws.cell(row=r, column=12).value = d_l
                 ws.cell(row=r, column=13).value = self.converter_para_numero(item.get(1, ""))
                 
-                # BOTAO FALSO NA COLUNA N
-                texto_especial = f"{str(item.get(2, ''))} {str(item.get(14, ''))} {str(item.get(3, ''))}".upper()
-                if not any(m in texto_especial for m in ["KRION", "DURASEIN", "CORIAN"]) and not re.search(r'\bTS\b', texto_especial):
-                    cel_n = ws.cell(row=r, column=14)
-                    cel_n.value = "+5"
-                    cel_n.fill = fill_botao
-                    cel_n.font = font_botao
-                    cel_n.alignment = align_botao
+                # --- BOTÃO AZUL: SÓ APARECE SE NÃO FOR PRENSADO E NÃO FOR ESPECIAL ---
+                texto_especial = f"{str(item.get(2, ''))} {str(item.get(3, ''))} {str(item.get(14, ''))}".upper()
+                if not bloco_e_prensado:
+                    if not any(m in texto_especial for m in ["KRION", "DURASEIN", "CORIAN"]) and not re.search(r'\bTS\b', texto_especial):
+                        cel_n = ws.cell(row=r, column=14)
+                        cel_n.value = "+5"; cel_n.fill = fill_botao; cel_n.font = font_botao; cel_n.alignment = align_botao
                 row_idx += 1
         
         txt_q = f"PROJETO DE REFERÊNCIA: {id_proj}"
@@ -230,8 +230,7 @@ class AppIngecon(ctk.CTk):
         try:
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
             if df.shape[0] < 2 or df.shape[1] < 2: raise Exception("Cade os dados?")
-            cod_b2 = str(df.iloc[1, 1]).strip()
-            id_p = cod_b2.upper()
+            cod_b2 = str(df.iloc[1, 1]).strip(); id_p = cod_b2.upper()
             MARCAS = {"ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"}
             marca = next((v for k,v in MARCAS.items() if k in id_p), "Outros")
             pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), marca, id_p)
@@ -244,12 +243,17 @@ class AppIngecon(ctk.CTk):
             
             def f_valido(f):
                 c, a, d, mc = self.limpar(f[1]), str(f[2]).upper(), str(f[3]).upper(), self.limpar(f[14])
-                if 'CORTE' in a or "LAMINA MADEIRA" in d or "LAMINA MADEIRA" in mc: return False
+                # --- FILTRO ATUALIZADO: BLOQUEIA LAMINA MADEIRA E LAMINA MAD ---
+                if 'CORTE' in a or any(x in d for x in ["LAMINA MADEIRA", "LAMINA MAD"]) or any(x in mc for x in ["LAMINA MADEIRA", "LAMINA MAD"]): return False
                 if '*' in a and not c.startswith('11'): return False
                 if "LAMINADO FORM" in d or "LAMINADO FORM" in mc: return c.startswith(('11', '15'))
                 if mc.startswith("92"): return c.startswith(('11', '15')) if any(m in d for m in ["KRION", "CORIAN", "DURASEIN"]) else False
                 return c.startswith(('11', '15')) and not any(x in mc for x in ["9172", "93"])
-            
+
+            def is_prensado(r):
+                c, d, a = self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
+                return "PRENSADO" in d or c == "1152032" or "PRLA" in a
+
             cons = {}
             for _, r in df.iterrows():
                 nv, cod = self.limpar(r[0]), self.limpar(r[1])
@@ -257,55 +261,56 @@ class AppIngecon(ctk.CTk):
                     if nv not in cons: cons[nv] = {'pai': r, 'blocos': [], 'qtd_pai_total': 0}
                     cons[nv]['qtd_pai_total'] += float(self.converter_para_numero(r[5]) or 0)
             
-            dups, processar_list = [], []
+            dups_paths, dups_codes, processar_list = [], [], []
             for nv_p, info in cons.items():
-                cod_p = self.limpar(info['pai'][1])
-                cam_net = self.verificar_duplicidade_em_rede(cod_p)
-                if cam_net: dups.append(cod_p)
+                cam_net = self.verificar_duplicidade_em_rede(self.limpar(info['pai'][1]))
+                if cam_net: dups_paths.append(cam_net); dups_codes.append(self.limpar(info['pai'][1]))
                 else: processar_list.append((nv_p, info))
             
-            if dups:
-                lista_dups = "\n".join(dups)
-                messagebox.showwarning("Peças Repetidas", f"{len(dups)} planilhas ja existem e serao puladas:\n\n{lista_dups}")
+            if dups_paths:
+                try:
+                    with open(ARQ_REPETIDAS, "w", encoding="utf-8") as f: f.write("\n".join(dups_paths))
+                except: pass
+                messagebox.showwarning("Peças Repetidas", f"{len(dups_paths)} ja existem:\n\n" + "\n".join(dups_codes))
 
             for nv_p, info in processar_list:
-                cod_p = self.limpar(info['pai'][1])
-                descend = df[df[0].str.startswith(nv_p + ".")].copy()
+                cod_p = self.limpar(info['pai'][1]); descend = df[df[0].str.startswith(nv_p + ".")].copy()
+                tem_filhos_no_pdm = not descend.empty
+                pai_is_prensado = is_prensado(info['pai'])
+                
                 block_roots = {}
                 for _, r in descend.iterrows():
-                    nv, cod, desc, acab = self.limpar(r[0]), self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
+                    nv, cod = self.limpar(r[0]), self.limpar(r[1])
                     is15 = cod_p.startswith('15') and cod.startswith('15') and nv.count('.') > niv_pai
-                    isp = "PRENSADO" in desc or cod == "1152032" or "PRLA" in acab
-                    if is15 or isp:
+                    if is15 or is_prensado(r):
                         strict_prefixes = [p for p in block_roots.keys() if nv.startswith(p + ".")]
                         parent_qf = block_roots[max(strict_prefixes, key=len)]['qf'] if strict_prefixes else 1.0
                         my_qf = float(self.converter_para_numero(r[5]) or 1) * parent_qf
-                        block_roots[nv] = {'tipo': 'prensado', 'prensado_info': r, 'itens': [], 'qf': my_qf, 'is15': is15, 'isp': isp}
+                        block_roots[nv] = {'tipo': 'prensado', 'prensado_info': r, 'itens': [], 'qf': my_qf}
 
-                bloco_avulso = {'tipo': 'normal', 'itens': []}
-                skip_prefix = None
+                bloco_avulso = {'tipo': 'normal', 'itens': []}; skip_prefix = None
                 for _, r in descend.iterrows():
-                    nv, cod, desc, acab = self.limpar(r[0]), self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
+                    nv, cod, acab = self.limpar(r[0]), self.limpar(r[1]), str(r[2]).upper()
                     if skip_prefix and nv.startswith(skip_prefix): continue
-                    else: skip_prefix = None
-                    if 'CORTE' in acab or ('*' in acab and not cod.startswith('11')): 
-                        skip_prefix = nv + "."
-                        continue
+                    if 'CORTE' in acab or ('*' in acab and not cod.startswith('11')): skip_prefix = nv + "."; continue
+                    
                     strict_prefixes = [p for p in block_roots.keys() if nv.startswith(p + ".")]
                     parent_block = block_roots[max(strict_prefixes, key=len)] if strict_prefixes else None
                     if not (nv in block_roots) and f_valido(r):
-                        ic = r.copy().to_dict() 
-                        if not (parent_block and parent_block['isp']):
-                            txt_especial = f"{str(ic.get(2, ''))} {str(ic.get(3, ''))} {str(ic.get(14, ''))}".upper()
-                            if any(m in txt_especial for m in ["KRION", "DURASEIN", "CORIAN"]) or re.search(r'\bTS\b', txt_especial):
+                        ic = r.copy().to_dict()
+                        contexto_prensado = (pai_is_prensado or (parent_block and parent_block['tipo'] == 'prensado'))
+                        
+                        # --- SOMA +5 AUTOMÁTICA (PYTHON): SÓ SE NÃO FOR PRENSADO ---
+                        if not contexto_prensado:
+                            txt_esp = f"{str(ic.get(2, ''))} {str(ic.get(3, ''))} {str(ic.get(14, ''))}".upper()
+                            if any(m in txt_esp for m in ["KRION", "DURASEIN", "CORIAN"]) or re.search(r'\bTS\b', txt_esp):
                                 for idx_dim in [8, 10, 15, 16]:
                                     if idx_dim in ic:
-                                        val_dim = str(ic[idx_dim]).strip()
-                                        if val_dim and val_dim not in ['-', '=']:
+                                        val = str(ic[idx_dim]).strip()
+                                        if val and val not in ['-', '=']:
                                             try:
-                                                v_num = float(val_dim.replace(',', '.'))
-                                                novo_val = v_num + 5
-                                                ic[idx_dim] = str(int(novo_val)) if novo_val.is_integer() else str(novo_val).replace('.', ',')
+                                                v_num = float(val.replace(',', '.')); novo = v_num + 5
+                                                ic[idx_dim] = str(int(novo)) if novo.is_integer() else str(novo).replace('.', ',')
                                             except: pass
                         if parent_block:
                             ic['q_unitaria_fatorada'] = float(self.converter_para_numero(r[5]) or 0) * parent_block['qf']
@@ -318,13 +323,10 @@ class AppIngecon(ctk.CTk):
                 for br in block_roots.values():
                     if br['itens']: info['blocos'].append(br)
                 
-                # FALLBACK: Se não tiver itens filtrados, gera o pai
-                if info['blocos']:
-                    self.gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_pai_total'], molde, pasta)
-                else:
-                    ic = info['pai'].copy().to_dict()
-                    ic['q_unitaria_fatorada'] = 1.0
-                    self.gerar_arquivo_excel(info['pai'], [{'tipo': 'normal', 'itens': [ic]}], id_p, info['qtd_pai_total'], molde, pasta)
+                if info['blocos']: self.gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_pai_total'], molde, pasta, pai_is_prensado)
+                elif not tem_filhos_no_pdm:
+                    ic = info['pai'].copy().to_dict(); ic['q_unitaria_fatorada'] = 1.0
+                    self.gerar_arquivo_excel(info['pai'], [{'tipo': 'normal', 'itens': [ic]}], id_p, info['qtd_pai_total'], molde, pasta, pai_is_prensado)
 
             self.after(0, self.sucesso_final, pasta)
         except Exception as e: self.after(0, self.erro_final, str(e))
