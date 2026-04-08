@@ -9,9 +9,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from copy import copy
-from openpyxl.styles import Font, Alignment
-from openpyxl.cell.text import InlineFont
-from openpyxl.cell.rich_text import TextBlock, CellRichText
+from openpyxl.styles import Font, Alignment, PatternFill
 
 import tkinter as tk
 import customtkinter as ctk
@@ -20,7 +18,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.53"
+VERSAO_ATUAL = "2.0.56"
 
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS\PLANOS DE CORTE 2026")
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
@@ -172,6 +170,11 @@ class AppIngecon(ctk.CTk):
         wb = load_workbook(molde, keep_vba=True); ws = wb.active
         total_linhas = sum(len(b['itens']) + (1 if b['tipo'] == 'prensado' else 0) for b in blocos)
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
+        
+        fill_botao = PatternFill(start_color='0078D7', end_color='0078D7', fill_type='solid')
+        font_botao = Font(color='FFFFFF', bold=True)
+        align_botao = Alignment(horizontal='center', vertical='center')
+
         cod_p, acab_p, desc_p = self.limpar(pai[1]), self.limpar(pai[2]), self.limpar(pai[3])
         acab_real = acab_p.strip(" _-")
         tit = f"{cod_p}_{acab_real} - {desc_p}" if acab_real else f"{cod_p} - {desc_p}"
@@ -179,6 +182,7 @@ class AppIngecon(ctk.CTk):
         try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
         except: ws['A3'].value = qtd_tot
         ws['M2'].value = datetime.now().strftime('%d/%m/%Y')
+        
         blocos_ord = sorted(blocos, key=lambda x: 0 if x['tipo'] == 'normal' else 1)
         row_idx = 6
         for b in blocos_ord:
@@ -187,19 +191,32 @@ class AppIngecon(ctk.CTk):
                 p_d = b['prensado_info']; ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
                 cell_h = ws.cell(row=row_idx, column=2); cell_h.value = f"{self.limpar(p_d[1])} - {self.limpar(p_d[3])}"
                 cell_h.font = Font(bold=True, size=15); cell_h.alignment = Alignment(horizontal='center', vertical='center'); row_idx += 1
+            
             for item in b['itens']:
                 r = row_idx; desc_f = self.limpar(item[3])
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
                 tem_fita = any(x in [self.limpar(item.get(15, "")), self.limpar(item.get(16, ""))] for x in ['-', '='])
+                
                 ws.cell(row=r, column=1).value = f"={float(item['q_unitaria_fatorada'])}*A3"
                 for col, idx in [(2,15), (3,8), (5,16), (6,10), (8,12)]:
                     v = self.converter_para_numero(item.get(idx, "")); c = ws.cell(row=r, column=col); c.value = v
                     if isinstance(v, (int, float)): c.number_format = '0'
+                
                 ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(str(m_l))
                 ws.cell(row=r, column=11).value = "SEC-LAM" if tem_fita else "SEC"
                 ws.cell(row=r, column=12).value = d_l
                 ws.cell(row=r, column=13).value = self.converter_para_numero(item.get(1, ""))
+                
+                # BOTAO FALSO NA COLUNA N
+                texto_especial = f"{str(item.get(2, ''))} {str(item.get(14, ''))} {str(item.get(3, ''))}".upper()
+                if not any(m in texto_especial for m in ["KRION", "DURASEIN", "CORIAN"]) and not re.search(r'\bTS\b', texto_especial):
+                    cel_n = ws.cell(row=r, column=14)
+                    cel_n.value = "+5"
+                    cel_n.fill = fill_botao
+                    cel_n.font = font_botao
+                    cel_n.alignment = align_botao
                 row_idx += 1
+        
         txt_q = f"PROJETO DE REFERÊNCIA: {id_proj}"
         self.escrever_seguro(ws, f"A{l_obs}", txt_q, Alignment(horizontal='left', vertical='center'))
         nome_f = re.sub(r'[\\/*?:\u0022<>|]', '', tit); wb.save(os.path.join(pasta, f"{nome_f}.xlsm"))
@@ -212,24 +229,14 @@ class AppIngecon(ctk.CTk):
     def core_processamento(self):
         try:
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
-            
-            if df.shape[0] < 2 or df.shape[1] < 2:
-                raise Exception("Nao foi encontrado Código Pai verificar se a opção Exibir Selecionado esta ativada no PDM")
-            
+            if df.shape[0] < 2 or df.shape[1] < 2: raise Exception("Cade os dados?")
             cod_b2 = str(df.iloc[1, 1]).strip()
-            if not cod_b2 or not re.search(r'[A-Za-z]', cod_b2):
-                raise Exception("Nao foi encontrado Código Pai verificar se a opção Exibir Selecionado esta ativada no PDM")
-            
             id_p = cod_b2.upper()
             MARCAS = {"ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"}
             marca = next((v for k,v in MARCAS.items() if k in id_p), "Outros")
-            
             pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), marca, id_p)
             if not os.path.exists(pasta): os.makedirs(pasta)
-            
             molde = DIRETORIO_SISTEMA / "planilha_molde.xlsm"
-            if not molde.exists():
-                raise Exception(f"Arquivo molde nao encontrado na rede:\n{molde}")
             
             col0 = [str(x).strip() for x in df[0] if str(x).strip()]
             min_d = min(x.count('.') for x in col0)
@@ -250,26 +257,17 @@ class AppIngecon(ctk.CTk):
                     if nv not in cons: cons[nv] = {'pai': r, 'blocos': [], 'qtd_pai_total': 0}
                     cons[nv]['qtd_pai_total'] += float(self.converter_para_numero(r[5]) or 0)
             
-            dups = []
-            processar_list = []
-            
-            # --- FASE 1: VERIFICAÇÃO PRÉVIA DE DUPLICADOS ---
+            dups, processar_list = [], []
             for nv_p, info in cons.items():
                 cod_p = self.limpar(info['pai'][1])
                 cam_net = self.verificar_duplicidade_em_rede(cod_p)
-                if cam_net: 
-                    dups.append(cod_p)
-                else:
-                    processar_list.append((nv_p, info))
+                if cam_net: dups.append(cod_p)
+                else: processar_list.append((nv_p, info))
             
-            # BLOQUEIO: Se tiver duplicados, exibe o aviso ANTES de processar e espera o usuário fechar
             if dups:
                 lista_dups = "\n".join(dups)
-                msg_aviso = f"{len(dups)} planilhas ja foram criadas anteriormente e não serão criadas novamente:\n\n{lista_dups}"
-                # Chamada direta síncrona para travar o código aqui
-                messagebox.showwarning("Peças Repetidas", msg_aviso)
+                messagebox.showwarning("Peças Repetidas", f"{len(dups)} planilhas ja existem e serao puladas:\n\n{lista_dups}")
 
-            # --- FASE 2: GERAÇÃO DAS NOVAS ---
             for nv_p, info in processar_list:
                 cod_p = self.limpar(info['pai'][1])
                 descend = df[df[0].str.startswith(nv_p + ".")].copy()
@@ -298,9 +296,8 @@ class AppIngecon(ctk.CTk):
                     if not (nv in block_roots) and f_valido(r):
                         ic = r.copy().to_dict() 
                         if not (parent_block and parent_block['isp']):
-                            texto_busca = f"{str(ic.get(2, ''))} {str(ic.get(3, ''))} {str(ic.get(14, ''))}".upper()
-                            tem_mat_especial = any(m in texto_busca for m in ["KRION", "DURASEIN", "CORIAN"]) or re.search(r'\bTS\b', texto_busca)
-                            if tem_mat_especial:
+                            txt_especial = f"{str(ic.get(2, ''))} {str(ic.get(3, ''))} {str(ic.get(14, ''))}".upper()
+                            if any(m in txt_especial for m in ["KRION", "DURASEIN", "CORIAN"]) or re.search(r'\bTS\b', txt_especial):
                                 for idx_dim in [8, 10, 15, 16]:
                                     if idx_dim in ic:
                                         val_dim = str(ic[idx_dim]).strip()
@@ -320,9 +317,13 @@ class AppIngecon(ctk.CTk):
                 if bloco_avulso['itens']: info['blocos'].append(bloco_avulso)
                 for br in block_roots.values():
                     if br['itens']: info['blocos'].append(br)
-                if info['blocos']: self.gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_pai_total'], molde, pasta)
+                
+                # FALLBACK: Se não tiver itens filtrados, gera o pai
+                if info['blocos']:
+                    self.gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_pai_total'], molde, pasta)
                 else:
-                    ic = info['pai'].copy().to_dict(); ic['q_unitaria_fatorada'] = 1.0
+                    ic = info['pai'].copy().to_dict()
+                    ic['q_unitaria_fatorada'] = 1.0
                     self.gerar_arquivo_excel(info['pai'], [{'tipo': 'normal', 'itens': [ic]}], id_p, info['qtd_pai_total'], molde, pasta)
 
             self.after(0, self.sucesso_final, pasta)
