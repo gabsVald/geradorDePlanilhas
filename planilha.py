@@ -18,7 +18,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.69"
+VERSAO_ATUAL = "2.0.77"
 
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS\PLANOS DE CORTE 2026")
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
@@ -223,29 +223,54 @@ class AppIngecon(ctk.CTk):
                 cell_h.font = Font(bold=True, size=15); cell_h.alignment = Alignment(horizontal='center', vertical='center'); row_idx += 1
             
             for item in b['itens']:
-                r = row_idx; desc_f = self.limpar(item[3])
+                r = row_idx
+                
+                desc_f = str(self.limpar(item.get(3, "")))
+                txt_comp = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
+                
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
-                tem_fita = any(x in [self.limpar(item.get(15, "")), self.limpar(item.get(16, ""))] for x in ['-', '='])
+                
+                if any(m in txt_comp for m in ["KRION", "DURASEIN", "CORIAN", "TS"]):
+                    d_l = str(self.limpar(item.get(14, "")))
+                
+                tem_fita = any(str(self.limpar(item.get(x, ""))) in ['-', '='] for x in [15, 16])
+                
                 ws.cell(row=r, column=1).value = f"={float(item['q_unitaria_fatorada'])}*A3"
                 for col, idx in [(2,15), (3,8), (5,16), (6,10), (8,12)]:
-                    v = self.converter_para_numero(item.get(idx, "")); c = ws.cell(row=r, column=col); c.value = v
+                    v = self.converter_para_numero(item.get(idx, ""))
+                    c = ws.cell(row=r, column=col)
+                    c.value = v
                     if isinstance(v, (int, float)): c.number_format = '0'
                 
-                ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(str(m_l))
+                ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(m_l)
                 ws.cell(row=r, column=11).value = "SEC-LAM" if tem_fita else "SEC"
-                ws.cell(row=r, column=12).value = d_l
+                
+                # --- AQUI ESTÁ A CORREÇÃO: Forçamos a conversão para número! ---
+                ws.cell(row=r, column=12).value = self.converter_para_numero(d_l)
+                
                 ws.cell(row=r, column=13).value = self.converter_para_numero(item.get(1, ""))
                 
-                txt_comp = f"{str(item.get(2, ''))} {str(item.get(3, ''))} {str(item.get(14, ''))}".upper()
-                if any(m in txt_comp for m in materiais_com_veio):
+                tem_veio_autom = any(m in txt_comp for m in materiais_com_veio)
+                if "KRION" in txt_comp:
+                    altura_val = self.converter_para_numero(item.get(12, ""))
+                    if str(altura_val) == "3":
+                        tem_veio_autom = True
+
+                if tem_veio_autom:
                     ws.cell(row=r, column=10).value = 1
                     cel_o = ws.cell(row=r, column=15)
-                    cel_o.value = "Mudar veio"; cel_o.fill = fill_botao; cel_o.font = font_veio; cel_o.alignment = align_botao
+                    cel_o.value = "Mudar veio"
+                    cel_o.fill = fill_botao
+                    cel_o.font = font_veio
+                    cel_o.alignment = align_botao
 
                 if not bloco_e_prensado:
                     if not any(m in txt_comp for m in ["KRION", "DURASEIN", "CORIAN"]) and not re.search(r'\bTS\b', txt_comp):
                         cel_n = ws.cell(row=r, column=14)
-                        cel_n.value = "+5"; cel_n.fill = fill_botao; cel_n.font = font_botao; cel_n.alignment = align_botao
+                        cel_n.value = "+5"
+                        cel_n.fill = fill_botao
+                        cel_n.font = font_botao
+                        cel_n.alignment = align_botao
                 row_idx += 1
         
         txt_q = f"PROJETO DE REFERÊNCIA: {id_proj}"
@@ -279,16 +304,31 @@ class AppIngecon(ctk.CTk):
             niv_pai = min_d if (self.limpar(df.iloc[1, 1]).startswith(('11', '15'))) else min_d + 1
             
             def f_valido(f):
-                c, a, d, mc = self.limpar(f[1]), str(f[2]).upper(), str(f[3]).upper(), self.limpar(f[14])
-                if 'CORTE' in a or any(x in d for x in ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA"]) or any(x in mc for x in ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA"]): return False
-                if '*' in a and not c.startswith('11'): return False
-                if "LAMINADO FORM" in d or "LAMINADO FORM" in mc: return c.startswith(('11', '15'))
-                if mc.startswith("92"): return c.startswith(('11', '15')) if any(m in d for m in ["KRION", "CORIAN", "DURASEIN"]) else False
+                c = str(self.limpar(f.get(1, "")))
+                a = str(f.get(2, "")).upper()
+                d = str(f.get(3, "")).upper()
+                mc = str(self.limpar(f.get(14, "")))
+                
+                if 'CORTE' in a or any(x in d for x in ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA"]) or any(x in mc for x in ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA"]): 
+                    return False
+                if '*' in a and not c.startswith('11'): 
+                    return False
+                if "LAMINADO FORM" in d or "LAMINADO FORM" in mc: 
+                    return c.startswith(('11', '15'))
+                
+                if mc.startswith("92"): 
+                    if any(m in d for m in ["KRION", "CORIAN", "DURASEIN"]) or re.search(r'\bTS\b', d):
+                        return c.startswith(('11', '15'))
+                    else:
+                        return False
+                        
                 return c.startswith(('11', '15')) and not any(x in mc for x in ["9172", "93"])
 
             def is_prensado(r):
-                c, d, a = self.limpar(r[1]), str(r[3]).upper(), str(r[2]).upper()
-                return "PRENSADO" in d or c == "1152032" or "PRLA" in a
+                c = str(self.limpar(r.get(1, "")))
+                d = str(r.get(3, "")).upper()
+                a = str(r.get(2, "")).upper()
+                return "PRENSADO" in d or c in ["1152032", "1162032"] or "PRLA" in a
 
             cons = {}
             for _, r in df.iterrows():

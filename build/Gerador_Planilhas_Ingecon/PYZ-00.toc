@@ -1,4 +1,4 @@
-('C:\\Users\\gabriel.tiara\\Planilha '
+('c:\\Users\\gabriel.tiara\\Planilha '
  'Creator\\build\\Gerador_Planilhas_Ingecon\\PYZ-00.pyz',
  [('PIL',
    'C:\\Users\\gabriel.tiara\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PIL\\__init__.py',
