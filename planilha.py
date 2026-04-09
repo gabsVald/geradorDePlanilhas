@@ -18,7 +18,7 @@ from tkinter import messagebox
 # =============================
 # CONFIG AUTO UPDATE E DIRETÓRIOS
 # =============================
-VERSAO_ATUAL = "2.0.63"
+VERSAO_ATUAL = "2.0.69"
 
 DIRETORIO_RAIZ_PLANILHAS = Path(r"X:\Egpe\06 - PLANOS DE CORTE ATUALIZADOS\PLANOS DE CORTE 2026")
 DIRETORIO_SISTEMA = DIRETORIO_RAIZ_PLANILHAS / "GeradorPlanilhasAutomação"
@@ -35,6 +35,8 @@ ARQ_REPETIDAS = DESKTOP_PATH / "planilhas_repetidas.txt"
 
 COR_PRINCIPAL = "#d32732"
 COR_HOVER = "#a81f28"
+COR_TESTE = "#e67e22" 
+
 ctk.set_appearance_mode("Light") 
 
 class AppIngecon(ctk.CTk):
@@ -45,6 +47,10 @@ class AppIngecon(ctk.CTk):
         self.geometry("480x360") 
         self.configure(fg_color="#f5f5f5") 
         self.grid_columnconfigure(0, weight=1)
+
+        self.modo_teste_ativo = False
+        self.buffer_teclas = ""
+        self.SECRET_CODE = "dev"
 
         self.header_frame = ctk.CTkFrame(self, fg_color=COR_PRINCIPAL, height=70, corner_radius=0)
         self.header_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 20))
@@ -61,6 +67,23 @@ class AppIngecon(ctk.CTk):
 
         self.progress = ctk.CTkProgressBar(self, orientation="horizontal", progress_color=COR_PRINCIPAL, width=300)
         self.progress.set(0)
+
+        self.bind("<Key>", self.verificar_codigo_secreto)
+
+    def verificar_codigo_secreto(self, event):
+        self.buffer_teclas += event.char.lower()
+        if len(self.buffer_teclas) > len(self.SECRET_CODE):
+            self.buffer_teclas = self.buffer_teclas[-len(self.SECRET_CODE):]
+        if self.buffer_teclas == self.SECRET_CODE:
+            self.modo_teste_ativo = not self.modo_teste_ativo
+            self.buffer_teclas = ""
+            self.atualizar_visual_teste()
+
+    def atualizar_visual_teste(self):
+        if self.modo_teste_ativo:
+            self.btn_processar.configure(fg_color=COR_TESTE, hover_color="#d35400", text="MODO TESTE ATIVO")
+        else:
+            self.btn_processar.configure(fg_color=COR_PRINCIPAL, hover_color=COR_HOVER, text="Colar - Gerar Planilhas")
 
     def verificar_atualizacao(self):
         try:
@@ -175,7 +198,8 @@ class AppIngecon(ctk.CTk):
         l_obs = self.ajustar_molde_elastico(ws, total_linhas)
         
         fill_botao = PatternFill(start_color='0078D7', end_color='0078D7', fill_type='solid')
-        font_botao = Font(color='FFFFFF', bold=True)
+        font_botao = Font(color='FFFFFF', bold=True, size=10)
+        font_veio = Font(color='FFFFFF', bold=True, size=8)
         align_botao = Alignment(horizontal='center', vertical='center')
 
         cod_p, acab_p, desc_p = self.limpar(pai[1]), self.limpar(pai[2]), self.limpar(pai[3])
@@ -186,6 +210,8 @@ class AppIngecon(ctk.CTk):
         except: ws['A3'].value = qtd_tot
         ws['M2'].value = datetime.now().strftime('%d/%m/%Y')
         
+        materiais_com_veio = ["CARVALHO EUROPEU", "OKUME", "LUPA", "PINUS", "ITAPUA", "CARVALHO MEL"]
+
         row_idx = 6
         for b in sorted(blocos, key=lambda x: 0 if x['tipo'] == 'normal' else 1):
             bloco_e_prensado = (b['tipo'] == 'prensado' or pai_is_prensado)
@@ -204,15 +230,20 @@ class AppIngecon(ctk.CTk):
                 for col, idx in [(2,15), (3,8), (5,16), (6,10), (8,12)]:
                     v = self.converter_para_numero(item.get(idx, "")); c = ws.cell(row=r, column=col); c.value = v
                     if isinstance(v, (int, float)): c.number_format = '0'
+                
                 ws.cell(row=r, column=9).value = self.limpar_material_rigoroso(str(m_l))
                 ws.cell(row=r, column=11).value = "SEC-LAM" if tem_fita else "SEC"
                 ws.cell(row=r, column=12).value = d_l
                 ws.cell(row=r, column=13).value = self.converter_para_numero(item.get(1, ""))
                 
-                # --- BOTÃO AZUL: SÓ APARECE SE NÃO FOR PRENSADO E NÃO FOR ESPECIAL ---
-                texto_especial = f"{str(item.get(2, ''))} {str(item.get(3, ''))} {str(item.get(14, ''))}".upper()
+                txt_comp = f"{str(item.get(2, ''))} {str(item.get(3, ''))} {str(item.get(14, ''))}".upper()
+                if any(m in txt_comp for m in materiais_com_veio):
+                    ws.cell(row=r, column=10).value = 1
+                    cel_o = ws.cell(row=r, column=15)
+                    cel_o.value = "Mudar veio"; cel_o.fill = fill_botao; cel_o.font = font_veio; cel_o.alignment = align_botao
+
                 if not bloco_e_prensado:
-                    if not any(m in texto_especial for m in ["KRION", "DURASEIN", "CORIAN"]) and not re.search(r'\bTS\b', texto_especial):
+                    if not any(m in txt_comp for m in ["KRION", "DURASEIN", "CORIAN"]) and not re.search(r'\bTS\b', txt_comp):
                         cel_n = ws.cell(row=r, column=14)
                         cel_n.value = "+5"; cel_n.fill = fill_botao; cel_n.font = font_botao; cel_n.alignment = align_botao
                 row_idx += 1
@@ -228,12 +259,18 @@ class AppIngecon(ctk.CTk):
 
     def core_processamento(self):
         try:
+            is_teste = self.modo_teste_ativo
             df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
             if df.shape[0] < 2 or df.shape[1] < 2: raise Exception("Cade os dados?")
             cod_b2 = str(df.iloc[1, 1]).strip(); id_p = cod_b2.upper()
-            MARCAS = {"ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"}
-            marca = next((v for k,v in MARCAS.items() if k in id_p), "Outros")
-            pasta = os.path.join(str(DIRETORIO_RAIZ_PLANILHAS), marca, id_p)
+            
+            if is_teste:
+                pasta = DESKTOP_PATH / "TESTES_GERADOR" / id_p
+            else:
+                MARCAS = {"ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA", "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian", "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas", "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina", "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"}
+                marca = next((v for k,v in MARCAS.items() if k in id_p), "Outros")
+                pasta = DIRETORIO_RAIZ_PLANILHAS / marca / id_p
+            
             if not os.path.exists(pasta): os.makedirs(pasta)
             molde = DIRETORIO_SISTEMA / "planilha_molde.xlsm"
             
@@ -243,8 +280,7 @@ class AppIngecon(ctk.CTk):
             
             def f_valido(f):
                 c, a, d, mc = self.limpar(f[1]), str(f[2]).upper(), str(f[3]).upper(), self.limpar(f[14])
-                # --- FILTRO ATUALIZADO: BLOQUEIA LAMINA MADEIRA E LAMINA MAD ---
-                if 'CORTE' in a or any(x in d for x in ["LAMINA MADEIRA", "LAMINA MAD"]) or any(x in mc for x in ["LAMINA MADEIRA", "LAMINA MAD"]): return False
+                if 'CORTE' in a or any(x in d for x in ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA"]) or any(x in mc for x in ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA"]): return False
                 if '*' in a and not c.startswith('11'): return False
                 if "LAMINADO FORM" in d or "LAMINADO FORM" in mc: return c.startswith(('11', '15'))
                 if mc.startswith("92"): return c.startswith(('11', '15')) if any(m in d for m in ["KRION", "CORIAN", "DURASEIN"]) else False
@@ -263,9 +299,12 @@ class AppIngecon(ctk.CTk):
             
             dups_paths, dups_codes, processar_list = [], [], []
             for nv_p, info in cons.items():
-                cam_net = self.verificar_duplicidade_em_rede(self.limpar(info['pai'][1]))
-                if cam_net: dups_paths.append(cam_net); dups_codes.append(self.limpar(info['pai'][1]))
-                else: processar_list.append((nv_p, info))
+                cod_p = self.limpar(info['pai'][1])
+                cam_net = None if is_teste else self.verificar_duplicidade_em_rede(cod_p)
+                if cam_net: 
+                    dups_paths.append(cam_net); dups_codes.append(cod_p)
+                else: 
+                    processar_list.append((nv_p, info))
             
             if dups_paths:
                 try:
@@ -300,7 +339,6 @@ class AppIngecon(ctk.CTk):
                         ic = r.copy().to_dict()
                         contexto_prensado = (pai_is_prensado or (parent_block and parent_block['tipo'] == 'prensado'))
                         
-                        # --- SOMA +5 AUTOMÁTICA (PYTHON): SÓ SE NÃO FOR PRENSADO ---
                         if not contexto_prensado:
                             txt_esp = f"{str(ic.get(2, ''))} {str(ic.get(3, ''))} {str(ic.get(14, ''))}".upper()
                             if any(m in txt_esp for m in ["KRION", "DURASEIN", "CORIAN"]) or re.search(r'\bTS\b', txt_esp):
@@ -328,7 +366,7 @@ class AppIngecon(ctk.CTk):
                     ic = info['pai'].copy().to_dict(); ic['q_unitaria_fatorada'] = 1.0
                     self.gerar_arquivo_excel(info['pai'], [{'tipo': 'normal', 'itens': [ic]}], id_p, info['qtd_pai_total'], molde, pasta, pai_is_prensado)
 
-            self.after(0, self.sucesso_final, pasta)
+            self.after(0, self.sucesso_final, str(pasta))
         except Exception as e: self.after(0, self.erro_final, str(e))
 
     def sucesso_final(self, p): self.progress.stop(); self.progress.grid_forget(); self.btn_processar.configure(state="normal"); os.startfile(p); messagebox.showinfo("Ingecon", "Concluído!")
