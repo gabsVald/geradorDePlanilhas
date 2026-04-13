@@ -1,0 +1,32 @@
+{
+  "versao_atual": "2.2.04",
+  "diretorios": {
+    "raiz": "X:\\Egpe\\06 - PLANOS DE CORTE ATUALIZADOS\\PLANOS DE CORTE 2026",
+    "antigos": "X:\\Egpe\\ANTIGOS - NÃO USAR",
+    "nome_pasta_sistema": "GeradorPlanilhasAutomação"
+  },
+  "filtros": {
+    "prefixos_validos": ["11", "15"],
+    "descricoes_ignoradas": ["CORTE"],
+    "materiais_ignorados": ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAMINA PINUS"],
+    "mp_iniciais_ignoradas": ["9172", "93"]
+  },
+  "especiais": {
+    "materiais_plus_5mm": ["KRION", "DURASEIN", "CORIAN", "TS"],
+    "materiais_com_veio": ["CARVALHO EUROPEU", "OKUME", "LUPA", "PINUS", "ITAPUA", "CARVALHO MEL"],
+    "marcas_texto": {
+      "ZAR": "ZARA", "ZFR": "ZAFFARI", "SEP": "SEPHORA", "PRO": "PROTÓTIPO"
+    },
+    "marcas_imagem": {
+      "ARO": "amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA",
+      "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian",
+      "ING": "ingecon", "MCD": "mcdonalds", "PER": "pernambucanas",
+      "REN": "renner", "TMS": "Tramontina", "TRA": "tramontinaPDV"
+    }
+  },
+  "prensados": {
+    "descricoes_gatilho": ["PRENSADO"],
+    "acabamentos_gatilho": ["PRLA"],
+    "codigos_gatilho": ["1152032", "1162032"]
+  }
+}
