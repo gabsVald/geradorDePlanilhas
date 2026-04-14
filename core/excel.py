@@ -8,12 +8,10 @@ from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as OpenpyxlImage
 from openpyxl.styles import Font, Alignment, PatternFill
 
-# Importamos as nossas ferramentas e o cérebro do sistema
 from utils.config import REGRAS
 from utils.helpers import limpar, converter_para_numero, limpar_material_rigoroso, resource_path
 
 def escrever_seguro(ws, coord, valor, alinhamento=None):
-    """Escreve em células, tratando corretamente células mescladas."""
     try:
         cell = ws[coord]
         if cell.__class__.__name__ == 'MergedCell':
@@ -37,14 +35,12 @@ def tratar_cabecalho_a1(ws, id_projeto):
     id_up = str(id_projeto).upper()
     ws['A1'].value = None
 
-    # PRIORIDADE 1: TEXTO (Zara, Zaffari, etc.)
     for sigla, nome in marcas_texto.items():
         if sigla in id_up:
             escrever_seguro(ws, 'A1', nome, Alignment(horizontal='center', vertical='center'))
             ws['A1'].font = Font(size=22, bold=True)
             return
 
-    # PRIORIDADE 2: IMAGEM
     for sigla, arq in logos_imagem.items():
         if sigla in id_up:
             path = resource_path(f"logos/{arq}.png")
@@ -55,7 +51,6 @@ def tratar_cabecalho_a1(ws, id_projeto):
                 ws.add_image(img, 'A1')
                 return
 
-    # PADRÃO
     path_ing = resource_path("logos/ingecon.png")
     if Path(path_ing).exists():
         img = OpenpyxlImage(path_ing)
@@ -64,7 +59,6 @@ def tratar_cabecalho_a1(ws, id_projeto):
         ws.add_image(img, 'A1')
 
 def ajustar_molde_elastico(ws, num_itens):
-    """Redimensiona a planilha conforme a quantidade de itens."""
     for r in range(1, 50):
         ws.row_dimensions[r].hidden = False
 
@@ -99,177 +93,132 @@ def ajustar_molde_elastico(ws, num_itens):
     return n_inicio
 
 def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_prensado):
-    """Cria o arquivo Excel formatado com os dados coletados."""
     wb = load_workbook(molde, keep_vba=True)
     ws = wb.active
     total_itens = sum(len(b['itens']) + (1 if b['tipo'] == 'prensado' else 0) for b in blocos)
-    
     l_obs = ajustar_molde_elastico(ws, total_itens)
     
-    # Estilos dos Botões visuais
     fill_botao = PatternFill(start_color='0078D7', end_color='0078D7', fill_type='solid')
     fill_erro = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
     font_botao = Font(color='FFFFFF', bold=True, size=10)
     font_veio = Font(color='FFFFFF', bold=True, size=8)
     align_botao = Alignment(horizontal='center', vertical='center')
 
-    # Título do Projeto
     cod_p, acab_p, desc_p = limpar(pai[1]), limpar(pai[2]), limpar(pai[3])
-    acab_real = acab_p.strip(" _-")
-    tit = f"{cod_p}_{acab_real} - {desc_p}" if acab_real else f"{cod_p} - {desc_p}"
+    tit = f"{cod_p}_{acab_p.strip(' _-')} - {desc_p}" if acab_p.strip(' _-') else f"{cod_p} - {desc_p}"
     
     tratar_cabecalho_a1(ws, id_proj)
     escrever_seguro(ws, 'B3', tit)
-    try: 
-        ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
-    except Exception: 
-        ws['A3'].value = qtd_tot
+    try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
+    except: ws['A3'].value = qtd_tot
     
     ws['M2'].value = datetime.now().strftime('%d/%m/%Y')
-    materiais_com_veio = REGRAS["especiais"]["materiais_com_veio"]
-    materiais_especiais = REGRAS["especiais"]["materiais_plus_5mm"]
+    mat_veio = REGRAS["especiais"]["materiais_com_veio"]
+    mat_esp = REGRAS["especiais"]["materiais_plus_5mm"]
 
     row_idx = 6
-    for b in sorted(blocos, key=lambda x: 0 if x['tipo'] == 'normal' else 1):
+    for b in blocos:
+        # BUG 1: Inicializa desc_prensado para evitar NameError
+        desc_prensado = "" 
         bloco_e_prensado = (b['tipo'] == 'prensado' or pai_is_prensado)
+        is_bloco_migrado = any(item.get('is_migrado', False) for item in b['itens'])
         
-        # --- PRÉ-CÁLCULO DAS DIMENSÕES PARA A DESCRIÇÃO DO PRENSADO ---
-        espessura = "0"
-        dim_c, dim_f = 0, 0
-        
+        espessura, dim_c, dim_f = "0", 0, 0
         if bloco_e_prensado:
-            max_c, max_f = 0, 0
-            for item in b['itens']:
-                v_c_raw = limpar(item.get(15, "")) if limpar(item.get(15, "")) not in ["", "-", "="] else item.get(8, "")
-                v_l_raw = limpar(item.get(16, "")) if limpar(item.get(16, "")) not in ["", "-", "="] else item.get(10, "")
+            if is_bloco_migrado:
+                dim_c, dim_f = "-", "-"
+                desc_prensado = str(b['prensado_info'].get(3, desc_p))
+            else:
+                max_c, max_f = 0, 0
+                for item in b['itens']:
+                    v_c = converter_para_numero(limpar(item.get(15, "")) or item.get(8, ""))
+                    v_l = converter_para_numero(limpar(item.get(16, "")) or item.get(10, ""))
+                    if isinstance(v_c, (int, float)) and v_c > max_c: max_c = v_c
+                    if isinstance(v_l, (int, float)) and v_l > max_f: max_f = v_l
                 
-                val_c = converter_para_numero(v_c_raw)
-                val_l = converter_para_numero(v_l_raw)
-                
-                if isinstance(val_c, int) and val_c > max_c: max_c = val_c
-                if isinstance(val_l, int) and val_l > max_f: max_f = val_l
-            
-            titulo_bloco = limpar(b['prensado_info'][3]) if b['tipo'] == 'prensado' else desc_p
-            nums_titulo = re.findall(r'\d+', titulo_bloco)
-            espessura = nums_titulo[-1] if nums_titulo else "0"
-            
-            dim_c = max_c - 10 if max_c > 10 else max_c
-            dim_f = max_f - 10 if max_f > 10 else max_f
-        # -------------------------------------------------
+                titulo_bloco = limpar(b['prensado_info'][3]) if b['tipo'] == 'prensado' else desc_p
+                nums = re.findall(r'\d+', titulo_bloco)
+                espessura = nums[-1] if nums else "0"
+                dim_c = max_c - 10 if max_c > 10 else max_c
+                dim_f = max_f - 10 if max_f > 10 else max_f
+                desc_prensado = f"{int(dim_c)}X{int(dim_f)}X{espessura}"
 
-        # Cabeçalho Visual do Bloco Prensado
         if b['tipo'] == 'prensado':
             ws.row_dimensions[row_idx].height = 15.75
-            p_d = b['prensado_info']
             ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
             cell_h = ws.cell(row=row_idx, column=2)
-            cell_h.value = f"{limpar(p_d[1])} - {limpar(p_d[3])}"
+            cell_h.value = f"{limpar(b['prensado_info'][1])} - {limpar(b['prensado_info'][3])}"
             cell_h.font = Font(bold=True, size=15)
             cell_h.alignment = align_botao
             row_idx += 1
         
-        # Escrita dos Itens
         for item in b['itens']:
-            r, is_migrado = row_idx, item.get('is_migrado', False)
-            
-            if is_migrado:
+            r, is_mig = row_idx, item.get('is_migrado', False)
+            if is_mig:
                 d_l, m_l = item['desc_orig'], item['mat_orig']
-                fita_str, veio_val = str(item['fita_orig']), item['veio_orig']
-                txt_comp = f"{d_l} {m_l}".upper()
+                fita, veio = str(item['fita_orig']), item['veio_orig']
+                txt = f"{d_l} {m_l}".upper()
             else:
                 desc_f = str(limpar(item.get(3, "")))
-                txt_comp = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
+                txt = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
-                if any(m in txt_comp for m in materiais_especiais): 
-                    d_l = str(limpar(item.get(14, "")))
-                fita_str = "SEC-LAM" if any(str(limpar(item.get(x, ""))) in ['-', '='] for x in [15, 16]) else "SEC"
-                veio_val = None
+                if any(m in txt for m in mat_esp): d_l = str(limpar(item.get(14, "")))
+                fita = "SEC-LAM" if any(str(limpar(item.get(x, ""))) in ['-', '='] for x in [15, 16]) else "SEC"
+                veio = None
 
-            is_especial = any(m in txt_comp for m in materiais_especiais)
+            plus = 5 if (any(m in txt for m in mat_esp) and not is_mig and not bloco_e_prensado) else 0
+            val_fat = float(item.get('q_unitaria_fatorada', 0))
             
-            # SE FOR PRENSADO, ITENS ESPECIAIS NÃO GANHAM +5
-            plus = 5 if (is_especial and not is_migrado and not bloco_e_prensado) else 0
-
-            try: 
-                val_fat = float(item.get('q_unitaria_fatorada', 0))
-            except Exception: 
-                val_fat = 0.0
+            c_q = ws.cell(row=r, column=1)
+            c_q.value = f"={val_fat}*A3"
+            if val_fat == 0 and not is_mig: c_q.fill = fill_erro
             
-            # Fórmula de Quantidade
-            c_formula = ws.cell(row=r, column=1)
-            c_formula.value = f"={val_fat}*A3"
-            if val_fat == 0: 
-                c_formula.fill = fill_erro
-            
-            # Dimensões (Comprimento e Largura)
-            val_15 = limpar(item.get(15, ""))
-            v_c_raw = val_15 if val_15 not in ["", "-", "="] else item.get(8, "")
-            v_c = converter_para_numero(v_c_raw)
-            if isinstance(v_c, int): v_c += plus
-            ws.cell(row=r, column=2).value = val_15 if val_15 in ["-", "="] else ""
+            v_c = converter_para_numero(limpar(item.get(15, "")) or item.get(8, ""))
+            if isinstance(v_c, (int, float)): v_c += plus
+            ws.cell(row=r, column=2).value = limpar(item.get(15, "")) if limpar(item.get(15, "")) in ["-", "="] else ""
             ws.cell(row=r, column=3).value = v_c
             ws.cell(row=r, column=4).value = "X"
 
-            val_16 = limpar(item.get(16, ""))
-            v_l_raw = val_16 if val_16 not in ["", "-", "="] else item.get(10, "")
-            v_l = converter_para_numero(v_l_raw)
-            if isinstance(v_l, int): v_l += plus
-            ws.cell(row=r, column=5).value = val_16 if val_16 in ["-", "="] else ""
+            v_l = converter_para_numero(limpar(item.get(16, "")) or item.get(10, ""))
+            if isinstance(v_l, (int, float)): v_l += plus
+            ws.cell(row=r, column=5).value = limpar(item.get(16, "")) if limpar(item.get(16, "")) in ["-", "="] else ""
             ws.cell(row=r, column=6).value = v_l
             ws.cell(row=r, column=7).value = "X"
 
-            # -------------------------------------------------------------------------
-            # APLICAÇÃO DA REGRA DO PRENSADO APENAS NA DESCRIÇÃO (Coluna L / 12)
-            # -------------------------------------------------------------------------
             ws.cell(row=r, column=8).value = converter_para_numero(item.get(12, ""))
-            
-            if bloco_e_prensado:
-                ws.cell(row=r, column=12).value = f"{dim_c}X{dim_f}X{espessura}"
-            else:
-                ws.cell(row=r, column=12).value = converter_para_numero(d_l)
-            # -------------------------------------------------------------------------
-
+            ws.cell(row=r, column=12).value = desc_prensado if bloco_e_prensado else converter_para_numero(d_l)
             ws.cell(row=r, column=9).value = limpar_material_rigoroso(m_l)
 
-            if is_migrado:
-                ws.cell(row=r, column=10).value = veio_val
+            if is_mig: ws.cell(row=r, column=10).value = veio
             else:
-                tem_v = any(m in txt_comp for m in materiais_com_veio)
-                if "KRION" in txt_comp and str(converter_para_numero(item.get(12, ""))) == "3": 
-                    tem_v = True
-                if tem_v: 
-                    ws.cell(row=r, column=10).value = 1
+                tem_v = any(m in txt for m in mat_veio)
+                if "KRION" in txt and str(converter_para_numero(item.get(12, ""))) == "3": tem_v = True
+                if tem_v: ws.cell(row=r, column=10).value = 1
             
-            ws.cell(row=r, column=11).value = fita_str
+            ws.cell(row=r, column=11).value = fita
             ws.cell(row=r, column=13).value = converter_para_numero(item.get(1, ""))
             
-            # Adição visual dos botões de Macro
             if ws.cell(row=r, column=10).value == 1:
-                cel_v = ws.cell(row=r, column=15)
-                cel_v.value = "⇄"
-                cel_v.fill = fill_botao
-                cel_v.font = font_veio
-                cel_v.alignment = align_botao
+                cv = ws.cell(row=r, column=15)
+                cv.value, cv.fill, cv.font, cv.alignment = "⇄", fill_botao, font_veio, align_botao
             
-            if not bloco_e_prensado and not is_especial:
-                cel_n = ws.cell(row=r, column=14)
-                cel_n.value = "+5"
-                cel_n.fill = fill_botao
-                cel_n.font = font_botao
-                cel_n.alignment = align_botao
+            if not bloco_e_prensado and not any(m in txt for m in mat_esp):
+                cn = ws.cell(row=r, column=14)
+                cn.value, cn.fill, cn.font, cn.alignment = "+5", fill_botao, font_botao, align_botao
             
             row_idx += 1
     
-    escrever_seguro(ws, f"A{l_obs}", f"PROJETO DE REFERÊNCIA: {id_proj}", 
-                         Alignment(horizontal='left', vertical='center'))
+    escrever_seguro(ws, f"A{l_obs}", f"PROJETO DE REFERÊNCIA: {id_proj}", Alignment(horizontal='left'))
+    caminho = os.path.join(pasta, f"{re.sub(r'[\\/*?:\u0022<>|]', '', tit).strip()[:120]}.xlsm")
     
-    # Salva o arquivo final
-    nome_f = re.sub(r'[\\/*?:\u0022<>|]', '', tit).strip()[:120]
-    if not nome_f: nome_f = f"PROJETO_SEM_NOME_{cod_p}"
-    
-    caminho_final = os.path.join(pasta, f"{nome_f}.xlsm")
-    tmp_save = caminho_final + ".tmp"
-    wb.save(tmp_save)
-    if os.path.exists(caminho_final): 
-        os.remove(caminho_final)
-    os.rename(tmp_save, caminho_final)
+    # BUG 2: Salvamento seguro .tmp + rename
+    caminho_tmp = caminho + ".tmp"
+    try:
+        wb.save(caminho_tmp)
+        if os.path.exists(caminho):
+            os.remove(caminho)
+        os.rename(caminho_tmp, caminho)
+    except Exception as e:
+        if os.path.exists(caminho_tmp):
+            os.remove(caminho_tmp)
+        raise e

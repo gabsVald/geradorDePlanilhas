@@ -6,16 +6,22 @@ from openpyxl import load_workbook
 from utils.config import REGRAS
 from utils.helpers import limpar, converter_para_numero
 
-def is_prensado_migracao(cod, desc):
-    """Verifica se a linha atual da planilha antiga é um título de prensado."""
+def is_prensado_migracao(cod, desc, col_a=""):
     d_up = str(desc).upper()
     c_str = str(cod).strip()
-    return any(g in d_up for g in REGRAS["prensados"]["descricoes_gatilho"]) or \
-           c_str in REGRAS["prensados"]["codigos_gatilho"]
+    a_up = str(col_a).upper()
+    
+    gatilhos = REGRAS["prensados"]["descricoes_gatilho"]
+    codigos = REGRAS["prensados"]["codigos_gatilho"]
+    
+    return any(g in d_up for g in gatilhos) or \
+           any(g in a_up for g in gatilhos) or \
+           c_str in codigos
 
 def extrair_dados_migracao(caminho):
-    """Lê planilhas antigas e organiza itens em blocos (Normais e Prensados)."""
     try:
+        termos_ignorar = ["PROGRAMAÇÃO", "DATA", "UN", "MEDIDA", "MATERIAL", "PROCESSO", "DESCRIÇÃO", "CÓDIGO", "QNT", "PROG."]
+        
         if str(caminho).lower().endswith('.ods'):
             df_old = pd.read_excel(caminho, engine='odf', header=None).fillna('')
             while df_old.shape[1] < 15: df_old[df_old.shape[1]] = ''
@@ -26,39 +32,37 @@ def extrair_dados_migracao(caminho):
             bloco_atual = {'tipo': 'normal', 'itens': []}
             
             for r in range(5, len(df_old)):
-                # Captura dados das colunas do formato ODS antigo
-                fator_bruto_raw = df_old.iloc[r, 0]
+                c0 = limpar(df_old.iloc[r, 0])
                 cod = limpar(df_old.iloc[r, 12])
                 desc = limpar(df_old.iloc[r, 11])
+                
+                if any(t in str(c0).upper() for t in termos_ignorar) or \
+                   any(t in str(cod).upper() for t in termos_ignorar) or \
+                   any(t in str(desc).upper() for t in termos_ignorar):
+                    continue
+
+                if is_prensado_migracao(cod, desc, c0):
+                    if bloco_atual['itens']: blocos.append(bloco_atual)
+                    f_cod, f_desc = cod, desc
+                    if not cod and " - " in c0:
+                        partes = c0.split(" - ", 1)
+                        f_cod, f_desc = partes[0].strip(), partes[1].strip()
+                    elif not cod: f_desc = c0
+                    bloco_atual = {'tipo': 'prensado', 'prensado_info': {1: f_cod, 3: f_desc}, 'itens': []}
+                    continue
+
                 comp = limpar(df_old.iloc[r, 2])
                 larg = limpar(df_old.iloc[r, 5])
-                esp = limpar(df_old.iloc[r, 7])
+                if not cod and not desc and not comp and not larg: continue
 
-                # 1. VERIFICA SE É TÍTULO DE PRENSADO (Antes de filtrar vazios)
-                if is_prensado_migracao(cod, desc):
-                    if bloco_atual['itens']:
-                        blocos.append(bloco_atual)
-                    bloco_atual = {
-                        'tipo': 'prensado', 
-                        'prensado_info': {1: cod, 3: desc}, 
-                        'itens': []
-                    }
-                    continue
-
-                # 2. FILTRA LINHAS REALMENTE VAZIAS
-                if not cod and not desc and not comp and not larg:
-                    continue
-
-                try:
-                    f_b = float(converter_para_numero(fator_bruto_raw) or 0)
+                try: f_b = float(converter_para_numero(df_old.iloc[r, 0]) or 0)
                 except: f_b = 0.0
                 
                 item = {
-                    1: cod, 15: df_old.iloc[r, 1], 8: comp,
-                    16: df_old.iloc[r, 4], 10: larg,
-                    12: esp, 'mat_orig': df_old.iloc[r, 8],
-                    'veio_orig': df_old.iloc[r, 9], 'fita_orig': df_old.iloc[r, 10],
-                    'desc_orig': desc, 'q_unitaria_fatorada': f_b / a3_valor if a3_valor > 0 else f_b,
+                    1: cod, 15: df_old.iloc[r, 1], 8: comp, 16: df_old.iloc[r, 4], 10: larg,
+                    12: limpar(df_old.iloc[r, 7]), 'mat_orig': limpar(df_old.iloc[r, 8]), 
+                    'veio_orig': df_old.iloc[r, 9], 'fita_orig': df_old.iloc[r, 10], 
+                    'desc_orig': desc, 'q_unitaria_fatorada': f_b / a3_valor if a3_valor > 0 else f_b, 
                     'is_migrado': True
                 }
                 bloco_atual['itens'].append(item)
@@ -66,7 +70,7 @@ def extrair_dados_migracao(caminho):
             if bloco_atual['itens']: blocos.append(bloco_atual)
             return blocos, a3_valor
 
-        else: # XLSX / XLSM (Formato Novo mas precisa de migração)
+        else:
             ws_d = load_workbook(caminho, data_only=True).active
             a3_valor = float(converter_para_numero(ws_d['A3'].value) or 1.0)
             a3_valor = 1.0 if a3_valor == 0 else a3_valor
@@ -74,31 +78,40 @@ def extrair_dados_migracao(caminho):
             blocos = []
             bloco_atual = {'tipo': 'normal', 'itens': []}
             
-            for r in range(6, 500):
-                fator_bruto_raw = ws_d.cell(row=r, column=1).value
+            for r in range(1, 500):
+                c0_raw = ws_d.cell(row=r, column=1).value
+                c0 = limpar(c0_raw)
                 cod = limpar(ws_d.cell(row=r, column=13).value)
                 desc = limpar(ws_d.cell(row=r, column=12).value)
-                comp = limpar(ws_d.cell(row=r, column=3).value)
-                larg = limpar(ws_d.cell(row=r, column=6).value)
-                esp = limpar(ws_d.cell(row=r, column=8).value)
 
-                if is_prensado_migracao(cod, desc):
-                    if bloco_atual['itens']: blocos.append(bloco_atual)
-                    bloco_atual = {'tipo': 'prensado', 'prensado_info': {1: cod, 3: desc}, 'itens': []}
+                if any(t in str(c0).upper() for t in termos_ignorar) or \
+                   any(t in str(cod).upper() for t in termos_ignorar) or \
+                   any(t in str(desc).upper() for t in termos_ignorar):
                     continue
 
+                if is_prensado_migracao(cod, desc, c0):
+                    if bloco_atual['itens']: blocos.append(bloco_atual)
+                    f_cod, f_desc = cod, desc
+                    if not cod and " - " in c0:
+                        partes = c0.split(" - ", 1)
+                        f_cod, f_desc = partes[0].strip(), partes[1].strip()
+                    elif not cod: f_desc = c0
+                    bloco_atual = {'tipo': 'prensado', 'prensado_info': {1: f_cod, 3: f_desc}, 'itens': []}
+                    continue
+
+                comp = limpar(ws_d.cell(row=r, column=3).value)
+                larg = limpar(ws_d.cell(row=r, column=6).value)
                 if not cod and not desc and not comp and not larg: continue
 
-                try:
-                    f_b = float(str(fator_bruto_raw or 0).replace(',', '.'))
+                try: f_b = float(converter_para_numero(c0_raw) or 0)
                 except: f_b = 0.0
                 
                 item = {
-                    1: cod, 15: ws_d.cell(row=r, column=2).value, 8: comp,
-                    16: ws_d.cell(row=r, column=5).value, 10: larg,
-                    12: esp, 'mat_orig': ws_d.cell(row=r, column=9).value,
-                    'veio_orig': ws_d.cell(row=r, column=10).value, 'fita_orig': ws_d.cell(row=r, column=11).value,
-                    'desc_orig': desc, 'q_unitaria_fatorada': f_b / a3_valor if a3_valor > 0 else f_b,
+                    1: cod, 15: ws_d.cell(row=r, column=2).value, 8: comp, 16: ws_d.cell(row=r, column=5).value, 
+                    10: larg, 12: limpar(ws_d.cell(row=r, column=8).value), 
+                    'mat_orig': limpar(ws_d.cell(row=r, column=9).value), 
+                    'veio_orig': ws_d.cell(row=r, column=10).value, 'fita_orig': ws_d.cell(row=r, column=11).value, 
+                    'desc_orig': desc, 'q_unitaria_fatorada': f_b / a3_valor if a3_valor > 0 else f_b, 
                     'is_migrado': True
                 }
                 bloco_atual['itens'].append(item)
@@ -112,6 +125,7 @@ def extrair_dados_migracao(caminho):
 
 def mapear_rede_cache():
     cache = {}
+    # Sobe um nível para buscar arquivos migrados em pastas de marcas/anos anteriores
     pasta_base = Path(REGRAS["diretorios"]["raiz"]).parent
     if pasta_base.exists():
         for root, _, files in os.walk(pasta_base):

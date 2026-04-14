@@ -6,7 +6,7 @@
     "nome_pasta_sistema": "GeradorPlanilhasAutomação",
     "mapeamento_pastas": {
       "ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA",
-      "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCopr", "IND": "Indian",
+      "CEN": "Centauro", "ELU": "Elubel", "FAR": "FarmaCorp", "IND": "Indian",
       "ING": "Ingecon", "MCD": "McDonalds", "PER": "Pernambucanas",
       "REN": "Renner", "TMS": "Tramontina", "TRA": "Tramontina",
       "ZAR": "Zara", "ZFR": "Zaffari", "SEP": "Sephora", "PRO": "Prototipo"

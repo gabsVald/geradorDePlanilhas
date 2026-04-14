@@ -20,7 +20,7 @@ def f_valido(f):
        any(x in mc for x in filtros["materiais_ignorados"]): return False
     if '*' in a and not c.startswith(tuple(filtros["prefixos_validos"])): return False
     if mc.startswith(tuple(filtros["mp_iniciais_ignoradas"])): 
-        is_especial = any(m in d for m in REGRAS["especiais"]["materials_plus_5mm"]) or re.search(r'\bTS\b', d)
+        is_especial = any(m in d for m in REGRAS["especiais"]["materiais_plus_5mm"]) or re.search(r'\bTS\b', d)
         return c.startswith(tuple(filtros["prefixos_validos"])) if is_especial else False
     return c.startswith(tuple(filtros["prefixos_validos"]))
 
@@ -81,16 +81,15 @@ def processar_clipboard(is_teste=False):
         elif cam_net: projetos_duplicados.append(cod_p)
         else: processar_list.append((nv_p, info))
 
-    # CONTADOR DE SUCESSOS
     arquivos_gerados_count = 0
 
     for nv_p, info in processar_list:
         if not info['blocos']:
             c_p = limpar(info['pai'][1])
-            desc = df[df[0].str.startswith(nv_p + ".")].copy()
+            desc_df = df[df[0].str.startswith(nv_p + ".")].copy()
             p_is_p = is_prensado(info['pai'])
             b_roots = {}
-            for _, r in desc.iterrows():
+            for _, r in desc_df.iterrows():
                 nv, cod = limpar(r[0]), limpar(r[1])
                 if (c_p.startswith('15') and cod.startswith('15') and nv.count('.') > niv_pai) or is_prensado(r):
                     pref = [p for p in b_roots.keys() if nv.startswith(p + ".")]
@@ -98,7 +97,7 @@ def processar_clipboard(is_teste=False):
                     b_roots[nv] = {'tipo': 'prensado', 'prensado_info': r, 'itens': [], 'qf': float(converter_para_numero(r[5]) or 1) * parent_qf}
             
             bloco_a = {'tipo': 'normal', 'itens': []}
-            for _, r in desc.iterrows():
+            for _, r in desc_df.iterrows():
                 nv = limpar(r[0])
                 pref = [p for p in b_roots.keys() if nv.startswith(p + ".")]
                 parent = b_roots[max(pref, key=len)] if pref else None
@@ -114,11 +113,10 @@ def processar_clipboard(is_teste=False):
             for br in b_roots.values(): 
                 if br['itens']: info['blocos'].append(br)
 
-            # --- GERAÇÃO COM VERIFICAÇÃO ---
             if any(len(b['itens']) > 0 for b in info['blocos']):
                 gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_p_total'], molde, pasta, p_is_p)
                 arquivos_gerados_count += 1
-            elif desc.empty and f_valido(info['pai']):
+            elif desc_df.empty and f_valido(info['pai']):
                 ic = info['pai'].copy().to_dict()
                 ic['q_unitaria_fatorada'] = 1.0
                 gerar_arquivo_excel(info['pai'], [{'tipo': 'normal', 'itens': [ic]}], id_p, info['qtd_p_total'], molde, pasta, p_is_p)
@@ -128,9 +126,8 @@ def processar_clipboard(is_teste=False):
                 gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_p_total'], molde, pasta, False)
                 arquivos_gerados_count += 1
 
-    # Se nada foi gerado, avisamos o utilizador
     if arquivos_gerados_count == 0:
-        raise Exception("Nenhuma planilha gerada. Os itens foram filtrados por serem considerados 'sem filhos úteis' ou materiais ignorados.")
+        return {"pasta": str(pasta), "migrados": [], "repetidos": [], "aviso": "Nenhuma planilha gerada após filtros."}
 
     if arquivos_para_arquivar and not is_teste:
         dir_antigos = Path(REGRAS["diretorios"]["antigos"])

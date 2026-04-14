@@ -1,6 +1,5 @@
 import os
 import threading
-import tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox
 
@@ -30,7 +29,7 @@ class AppIngecon(ctk.CTk):
 
     def setup_window(self):
         self.title(f"Ingecon - Gerador de Planilhas V{self.versao}")
-        self.geometry("480x360") 
+        self.geometry("480x420") 
         self.configure(fg_color="#f5f5f5") 
         self.grid_columnconfigure(0, weight=1)
 
@@ -64,6 +63,9 @@ class AppIngecon(ctk.CTk):
         )
         self.btn_processar.grid(row=1, column=0, padx=40, pady=40)
 
+        self.status_label = ctk.CTkLabel(self, text="Aguardando comando...", text_color="gray")
+        self.status_label.grid(row=2, column=0, pady=5)
+
         self.progress = ctk.CTkProgressBar(
             self, 
             orientation="horizontal", 
@@ -90,15 +92,14 @@ class AppIngecon(ctk.CTk):
 
     def iniciar_processamento(self):
         self.btn_processar.configure(state="disabled")
-        self.progress.grid(row=2, column=0, padx=20, pady=10)
+        self.status_label.configure(text="Processando...", text_color="#3498db")
+        self.progress.grid(row=3, column=0, padx=20, pady=10)
         self.progress.start()
         threading.Thread(target=self.executar_processo, daemon=True).start()
 
     def executar_processo(self):
         try:
-            # Chama a função que faz o trabalho real noutro ficheiro
             resultado = processar_clipboard(self.modo_teste_ativo)
-            # Retorna para a thread principal do Tkinter para atualizar a interface
             self.after(0, self.sucesso_final, resultado)
         except Exception as e: 
             self.after(0, self.erro_final, str(e))
@@ -107,6 +108,15 @@ class AppIngecon(ctk.CTk):
         self.progress.stop()
         self.progress.grid_forget()
         self.btn_processar.configure(state="normal")
+        
+        # BUG 3: Verifica se houve aviso de "nada gerado"
+        aviso = resultado.get("aviso")
+        if aviso:
+            self.status_label.configure(text="Aviso: Nada gerado.", text_color="#e67e22")
+            messagebox.showwarning("Atenção", aviso)
+            return
+
+        self.status_label.configure(text="Concluído!", text_color="#2ecc71")
         
         if resultado.get("migrados"):
             msg = "\n".join(sorted(set(resultado["migrados"])))
@@ -121,5 +131,11 @@ class AppIngecon(ctk.CTk):
 
     def erro_final(self, mensagem): 
         self.progress.stop()
+        self.progress.grid_forget()
         self.btn_processar.configure(state="normal")
+        self.status_label.configure(text="Erro ocorrido.", text_color="#e74c3c")
         messagebox.showerror("Erro", str(mensagem))
+
+if __name__ == "__main__":
+    app = AppIngecon()
+    app.mainloop()
