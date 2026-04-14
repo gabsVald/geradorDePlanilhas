@@ -56,13 +56,57 @@ def processar_clipboard(is_teste=False):
     if not limpar(df.iloc[1, 1]).startswith(tuple(REGRAS["filtros"]["prefixos_validos"])): niv_pai += 1
 
     cache_rede = {} if is_teste else mapear_rede_cache()
+    
+    # ---------------------------------------------------------------------
+    # PASSO 1: Mapear pais originais
+    # ---------------------------------------------------------------------
     cons = {}
     for _, r in df.iterrows():
         nv, cod = limpar(r[0]), limpar(r[1])
         if cod.startswith(tuple(REGRAS["filtros"]["prefixos_validos"])) and nv.count('.') == niv_pai:
-            if nv not in cons: cons[nv] = {'pai': r, 'blocos': [], 'qtd_p_total': 0}
+            if nv not in cons: 
+                # Adicionamos "niv_base" e "excluir_prefixos" para o rastreio da promoção
+                cons[nv] = {'pai': r, 'blocos': [], 'qtd_p_total': 0, 'excluir_prefixos': [], 'niv_base': niv_pai}
             cons[nv]['qtd_p_total'] += float(converter_para_numero(r[5]) or 0)
     
+    # ---------------------------------------------------------------------
+    # PASSO 2: Promover Filhos a Pais (Regra: Pai 15 Sem Acabamento -> Filho Com Acabamento)
+    # ---------------------------------------------------------------------
+    for _, r in df.iterrows():
+        nv, cod = limpar(r[0]), limpar(r[1])
+        acab = limpar(r[2]) # Coluna de Acabamento
+        
+        # Verifica filhos diretos
+        if nv.count('.') == niv_pai + 1:
+            nv_pai_str = nv.rsplit('.', 1)[0]
+            if nv_pai_str in cons:
+                pai_r = cons[nv_pai_str]['pai']
+                cod_pai = limpar(pai_r[1])
+                acab_pai = limpar(pai_r[2])
+                
+                # Se Pai é 15, não tem acabamento, e filho TEM acabamento
+                if cod_pai.startswith('15') and not acab_pai and acab:
+                    if nv not in cons:
+                        # Multiplica a quantidade do pai original pela quantidade do filho (para bater a qnt na planilha gerada)
+                        qtd_pai = cons[nv_pai_str]['qtd_p_total']
+                        qtd_filho = float(converter_para_numero(r[5]) or 0)
+                        qtd_total = qtd_pai * qtd_filho if qtd_pai > 0 else qtd_filho
+                        
+                        cons[nv] = {
+                            'pai': r, 
+                            'blocos': [], 
+                            'qtd_p_total': qtd_total, 
+                            'excluir_prefixos': [], 
+                            'niv_base': niv_pai + 1 # O novo pai opera um nível abaixo
+                        }
+                        # Remove a árvore deste filho do pai original
+                        cons[nv_pai_str]['excluir_prefixos'].append(nv)
+                    else:
+                        cons[nv]['qtd_p_total'] += float(converter_para_numero(r[5]) or 0)
+
+    # ---------------------------------------------------------------------
+    # PASSO 3: Migração de Arquivos da Rede
+    # ---------------------------------------------------------------------
     arquivos_migrados, projetos_duplicados, arquivos_para_arquivar = [], [], []
     processar_list = []
     
@@ -83,15 +127,27 @@ def processar_clipboard(is_teste=False):
 
     arquivos_gerados_count = 0
 
+    # ---------------------------------------------------------------------
+    # PASSO 4: Gerar Estrutura de Blocos e Excel
+    # ---------------------------------------------------------------------
     for nv_p, info in processar_list:
         if not info['blocos']:
             c_p = limpar(info['pai'][1])
-            desc_df = df[df[0].str.startswith(nv_p + ".")].copy()
+            niv_base = info.get('niv_base', niv_pai)
+            
+            # Filtra removendo os que viraram pais independentes
+            mask = df[0].str.startswith(nv_p + ".")
+            for excl in info.get('excluir_prefixos', []):
+                # Desconsidera o item exato (ex: 1.2.1) e todos os seus filhos (ex: 1.2.1.3)
+                mask = mask & ~(df[0] == excl) & ~df[0].str.startswith(excl + ".")
+                
+            desc_df = df[mask].copy()
             p_is_p = is_prensado(info['pai'])
+            
             b_roots = {}
             for _, r in desc_df.iterrows():
                 nv, cod = limpar(r[0]), limpar(r[1])
-                if (c_p.startswith('15') and cod.startswith('15') and nv.count('.') > niv_pai) or is_prensado(r):
+                if (c_p.startswith('15') and cod.startswith('15') and nv.count('.') > niv_base) or is_prensado(r):
                     pref = [p for p in b_roots.keys() if nv.startswith(p + ".")]
                     parent_qf = b_roots[max(pref, key=len)]['qf'] if pref else 1.0
                     b_roots[nv] = {'tipo': 'prensado', 'prensado_info': r, 'itens': [], 'qf': float(converter_para_numero(r[5]) or 1) * parent_qf}
@@ -106,9 +162,10 @@ def processar_clipboard(is_teste=False):
                     if parent: 
                         ic['q_unitaria_fatorada'] = float(converter_para_numero(r[5]) or 0) * parent['qf']
                         parent['itens'].append(ic)
-                    elif nv.count('.') == niv_pai + 1: 
+                    elif nv.count('.') == niv_base + 1: 
                         ic['q_unitaria_fatorada'] = float(converter_para_numero(r[5]) or 0)
                         bloco_a['itens'].append(ic)
+            
             if bloco_a['itens']: info['blocos'].append(bloco_a)
             for br in b_roots.values(): 
                 if br['itens']: info['blocos'].append(br)

@@ -79,7 +79,7 @@ def ajustar_molde_elastico(ws, num_itens):
     elif diff < 0: ws.delete_rows(l_rodape + diff, abs(diff))
     
     for r in range(6, 6 + num_itens):
-        ws.row_dimensions[r].height = 25.5
+        ws.row_dimensions[r].height = 35.25
         ws.cell(row=r, column=4).value = ws.cell(row=r, column=7).value = "X"
         if r > 6:
             for c in range(1, 16):
