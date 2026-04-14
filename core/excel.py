@@ -32,18 +32,19 @@ def escrever_seguro(ws, coord, valor, alinhamento=None):
         print(f"[EXCEL WARN] Falha ao escrever na célula {coord}: {e}")
 
 def tratar_cabecalho_a1(ws, id_projeto):
-    """Insere logótipos ou nomes de marcas na célula A1 buscando do JSON."""
     marcas_texto = REGRAS["especiais"]["marcas_texto"]
     logos_imagem = REGRAS["especiais"]["marcas_imagem"]
     id_up = str(id_projeto).upper()
     ws['A1'].value = None
 
+    # PRIORIDADE 1: TEXTO (Zara, Zaffari, etc.)
     for sigla, nome in marcas_texto.items():
         if sigla in id_up:
             escrever_seguro(ws, 'A1', nome, Alignment(horizontal='center', vertical='center'))
             ws['A1'].font = Font(size=22, bold=True)
             return
 
+    # PRIORIDADE 2: IMAGEM
     for sigla, arq in logos_imagem.items():
         if sigla in id_up:
             path = resource_path(f"logos/{arq}.png")
@@ -54,7 +55,7 @@ def tratar_cabecalho_a1(ws, id_projeto):
                 ws.add_image(img, 'A1')
                 return
 
-    # Padrão Ingecon se não encontrar marca
+    # PADRÃO
     path_ing = resource_path("logos/ingecon.png")
     if Path(path_ing).exists():
         img = OpenpyxlImage(path_ing)

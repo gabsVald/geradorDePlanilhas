@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files (Python)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyInstaller (Arquivos de compilação)
+build/
+dist/
+*.spec
+
+# Arquivos de log e temporários
+*.log
+*.tmp
+
+# Ambientes virtuais (caso utilize)
+venv/
+.venv/
+env/
+
+# IDEs (opcional)
+.vscode/
+.idea/

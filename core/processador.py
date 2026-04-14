@@ -66,9 +66,9 @@ def processar_clipboard(is_teste=False):
     if is_teste: 
         pasta = desktop_path / "TESTES_GERADOR" / id_p
     else:
-        # Busca a marca diretamente do JSON
-        marcas = REGRAS["especiais"]["marcas_imagem"].copy()
-        pasta_marca = next((v for k, v in marcas.items() if k in id_p), "Outros")
+        # Busca a marca diretamente do mapeamento de pastas unificado no JSON
+        mapeamento = REGRAS["diretorios"]["mapeamento_pastas"]
+        pasta_marca = next((v for k, v in mapeamento.items() if k in id_p), "Outros")
         pasta = Path(REGRAS["diretorios"]["raiz"]) / pasta_marca / id_p
     
     if not os.path.exists(pasta): 
