@@ -2,7 +2,7 @@
   "versao_atual": "2.2.05",
   "diretorios": {
     "raiz": "X:\\Egpe\\06 - PLANOS DE CORTE ATUALIZADOS\\PLANOS DE CORTE 2026",
-    "antigos": "X:\\Egpe\\06 - PLANOS DE CORTE ATUALIZADOS\\ANTIGOS - NÃO USAR",
+    "antigos": "X:\\Egpe\\ANTIGOS - NÃO USAR",
     "nome_pasta_sistema": "GeradorPlanilhasAutomação",
     "mapeamento_pastas": {
       "ARO": "Amaro", "BGK": "BurguerKing", "CAM": "Camicado", "CEA": "CeA",
@@ -15,7 +15,7 @@
   "filtros": {
     "prefixos_validos": ["11", "15"],
     "descricoes_ignoradas": ["CORTE"],
-    "materiais_ignorados": ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA", "LAMINA PINUS"],
+    "materiais_ignorados": ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA", "LAMINA PINUS", "FITA LED"],
     "mp_iniciais_ignoradas": ["9172", "93"]
   },
   "especiais": {
