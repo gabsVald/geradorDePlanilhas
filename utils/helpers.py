@@ -19,7 +19,7 @@ def limpar(val):
     if v.endswith('.0'): 
         v = v[:-2]
     return v if v.lower() not in ['nan', 'none', 'null', ''] else ""
-
+#
 def converter_para_numero(valor):
     """Converte strings para inteiros arredondados."""
     limpo = limpar(valor)

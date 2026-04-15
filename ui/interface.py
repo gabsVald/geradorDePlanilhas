@@ -25,7 +25,7 @@ class AppIngecon(ctk.CTk):
         self.create_widgets()
         
         self.bind("<Key>", self.verificar_codigo_secreto)
-
+#
     def setup_window(self):
         self.title(f"Ingecon - Gerador de Planilhas V{self.versao}")
         self.geometry("480x420") 

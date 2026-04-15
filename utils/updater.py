@@ -24,7 +24,7 @@ def verificar_atualizacao():
                     os._exit(0)
     except Exception as e: 
         print(f"[UPDATE WARN] {e}")
-
+#
 def executar_patch(exe_servidor):
     """Gera e executa um script batch para substituir o executável atual."""
     c_exe = sys.executable

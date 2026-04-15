@@ -15,7 +15,7 @@
   "filtros": {
     "prefixos_validos": ["11", "15"],
     "descricoes_ignoradas": ["CORTE"],
-    "materiais_ignorados": ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA", "LAMINA PINUS", "FITA LED"],
+    "materiais_ignorados": ["LAMINA MADEIRA", "LAMINA MAD", "LAM MAD", "LAM MADEIRA", "LAMINA PINUS", "LAM PINUS", "FITA LED"],
     "mp_iniciais_ignoradas": ["9172", "93"]
   },
   "especiais": {

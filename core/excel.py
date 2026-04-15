@@ -25,7 +25,7 @@ def buscar_valor_valido(item, indices):
                 if num and num > 0:
                     return num
     return 0
-
+#
 def escrever_seguro(ws, coord, valor, alinhamento=None):
     try:
         cell = ws[coord]

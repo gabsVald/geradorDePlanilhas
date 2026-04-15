@@ -18,6 +18,6 @@ def carregar_regras():
     except Exception as e:
         print(f"[ERRO CRÍTICO] Não foi possível carregar regras.json: {e}")
         return {}
-
+#
 # Variável global que o resto do sistema vai importar
 REGRAS = carregar_regras()

@@ -21,3 +21,6 @@ env/
 # IDEs (opcional)
 .vscode/
 .idea/
+
+#arquivo de backup
+planilha_bkp_antigo.py

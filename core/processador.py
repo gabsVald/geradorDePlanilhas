@@ -22,7 +22,7 @@ def f_valido(f):
         is_especial = any(m in d for m in REGRAS["especiais"]["materiais_plus_5mm"]) or re.search(r'\bTS\b', d)
         return c.startswith(tuple(filtros["prefixos_validos"])) if is_especial else False
     return c.startswith(tuple(filtros["prefixos_validos"]))
-
+#
 def is_prensado(r):
     desc = str(r.get(3, "")).upper()
     acab = str(r.get(2, "")).upper()

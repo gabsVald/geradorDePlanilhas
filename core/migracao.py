@@ -21,7 +21,7 @@ def is_prensado_migracao(cod, desc, col_a=""):
 def extrair_dados_migracao(caminho):
     try:
         termos_ignorar = ["PROGRAMAÇÃO", "DATA", "UN", "MEDIDA", "MATERIAL", "PROCESSO", "DESCRIÇÃO", "CÓDIGO", "QNT", "PROG."]
-        
+#        
         if str(caminho).lower().endswith('.ods'):
             df_old = pd.read_excel(caminho, engine='odf', header=None).fillna('')
             while df_old.shape[1] < 15: df_old[df_old.shape[1]] = ''
