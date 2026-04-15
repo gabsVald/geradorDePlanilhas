@@ -1,3 +1,7 @@
+# Ignorar arquivos de backup, logs, ambientes virtuais e diretórios de IDEs
+planilha_bkp_antigo.py
+logos/
+
 # Byte-compiled / optimized / DLL files (Python)
 __pycache__/
 *.py[cod]
