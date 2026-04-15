@@ -1,5 +1,4 @@
 import os
-import shutil
 import re
 import pandas as pd
 from pathlib import Path
@@ -43,104 +42,69 @@ def processar_clipboard(is_teste=False):
     niveis_encontrados = [str(x).count('.') for x in df[0] if re.match(r'^\d+(\.\d+)*$', str(x).strip())]
     if not niveis_encontrados: raise Exception("Estrutura de níveis não identificada.")
         
-    id_p = str(df.iloc[1, 1]).strip().upper()
-    desktop_path = Path(os.path.join(os.path.expanduser("~"), "Desktop"))
+    id_p_raw = str(df.iloc[1, 1]).strip().upper()
     
+    # --- TRAVA 1: PADRÃO 3 LETRAS + NÚMEROS (ZAR, REN, etc) ---
+    if not re.match(r'^[A-Z]{3}\d+', id_p_raw):
+        raise Exception(f"Não foi encontrado código pai do projeto. Verifique se a opção \"Incluir Selecionado\" esta ativa no PDM")
+
+    prefixos_validos = tuple(REGRAS["filtros"]["prefixos_validos"])
+    if not any(str(limpar(c)).startswith(prefixos_validos) for c in df[1]):
+        raise Exception("Nenhum código primordial válido encontrado na seleção.")
+    
+    id_p = re.sub(r'[\\/*?:"<>|]', '-', id_p_raw)
+    desktop_path = Path(os.path.join(os.path.expanduser("~"), "Desktop"))
     mapeamento = REGRAS["diretorios"]["mapeamento_pastas"]
     pasta_marca = next((v for k, v in mapeamento.items() if k in id_p), "Outros")
     pasta = (desktop_path / "TESTES_GERADOR" / id_p) if is_teste else (Path(REGRAS["diretorios"]["raiz"]) / pasta_marca / id_p)
-    
-    if not os.path.exists(pasta): os.makedirs(pasta)
     
     niv_pai = min(niveis_encontrados)
     if not limpar(df.iloc[1, 1]).startswith(tuple(REGRAS["filtros"]["prefixos_validos"])): niv_pai += 1
 
     cache_rede = {} if is_teste else mapear_rede_cache()
-    
-    # ---------------------------------------------------------------------
-    # PASSO 1: Mapear pais originais
-    # ---------------------------------------------------------------------
     cons = {}
     for _, r in df.iterrows():
         nv, cod = limpar(r[0]), limpar(r[1])
         if cod.startswith(tuple(REGRAS["filtros"]["prefixos_validos"])) and nv.count('.') == niv_pai:
             if nv not in cons: 
-                # Adicionamos "niv_base" e "excluir_prefixos" para o rastreio da promoção
                 cons[nv] = {'pai': r, 'blocos': [], 'qtd_p_total': 0, 'excluir_prefixos': [], 'niv_base': niv_pai}
             cons[nv]['qtd_p_total'] += float(converter_para_numero(r[5]) or 0)
     
-    # ---------------------------------------------------------------------
-    # PASSO 2: Promover Filhos a Pais (Regra: Pai 15 Sem Acabamento -> Filho Com Acabamento)
-    # ---------------------------------------------------------------------
     for _, r in df.iterrows():
         nv, cod = limpar(r[0]), limpar(r[1])
-        acab = limpar(r[2]) # Coluna de Acabamento
-        
-        # Verifica filhos diretos
+        acab = limpar(r[2])
         if nv.count('.') == niv_pai + 1:
             nv_pai_str = nv.rsplit('.', 1)[0]
             if nv_pai_str in cons:
                 pai_r = cons[nv_pai_str]['pai']
-                cod_pai = limpar(pai_r[1])
-                acab_pai = limpar(pai_r[2])
-                
-                # Se Pai é 15, não tem acabamento, e filho TEM acabamento
-                if cod_pai.startswith('15') and not acab_pai and acab:
+                if limpar(pai_r[1]).startswith('15') and not limpar(pai_r[2]) and acab:
                     if nv not in cons:
-                        # Multiplica a quantidade do pai original pela quantidade do filho (para bater a qnt na planilha gerada)
-                        qtd_pai = cons[nv_pai_str]['qtd_p_total']
-                        qtd_filho = float(converter_para_numero(r[5]) or 0)
-                        qtd_total = qtd_pai * qtd_filho if qtd_pai > 0 else qtd_filho
-                        
-                        cons[nv] = {
-                            'pai': r, 
-                            'blocos': [], 
-                            'qtd_p_total': qtd_total, 
-                            'excluir_prefixos': [], 
-                            'niv_base': niv_pai + 1 # O novo pai opera um nível abaixo
-                        }
-                        # Remove a árvore deste filho do pai original
+                        qtd_p = cons[nv_pai_str]['qtd_p_total']
+                        qtd_f = float(converter_para_numero(r[5]) or 0)
+                        cons[nv] = {'pai': r, 'blocos': [], 'qtd_p_total': qtd_p * qtd_f, 'excluir_prefixos': [], 'niv_base': niv_pai + 1}
                         cons[nv_pai_str]['excluir_prefixos'].append(nv)
-                    else:
-                        cons[nv]['qtd_p_total'] += float(converter_para_numero(r[5]) or 0)
 
-    # ---------------------------------------------------------------------
-    # PASSO 3: Migração de Arquivos da Rede
-    # ---------------------------------------------------------------------
-    arquivos_migrados, projetos_duplicados, arquivos_para_arquivar = [], [], []
+    arquivos_bloqueados = []
     processar_list = []
-    
     for nv_p, info in cons.items():
         cod_p = limpar(info['pai'][1])
         cam_net = None if is_teste else verificar_duplicidade_em_rede(cod_p, cache_rede)
-        if cam_net and "PLANOS DE CORTE 2026" not in str(cam_net):
-            blocos_mig, a3_mig = extrair_dados_migracao(cam_net)
-            if blocos_mig:
-                info['blocos'] = blocos_mig
-                info['qtd_p_total'] = a3_mig
-                arquivos_migrados.append(cod_p)
-                processar_list.append((nv_p, info))
-                arquivos_para_arquivar.append(cam_net)
-            else: processar_list.append((nv_p, info))
-        elif cam_net: projetos_duplicados.append(cod_p)
+        if cam_net:
+            pasta_origem = os.path.basename(os.path.dirname(cam_net))
+            arquivos_bloqueados.append(f"• Peça {cod_p} (Já existe em: {pasta_origem})")
         else: processar_list.append((nv_p, info))
 
     arquivos_gerados_count = 0
+    def garantir_pasta():
+        if not os.path.exists(pasta): os.makedirs(pasta)
 
-    # ---------------------------------------------------------------------
-    # PASSO 4: Gerar Estrutura de Blocos e Excel
-    # ---------------------------------------------------------------------
     for nv_p, info in processar_list:
         if not info['blocos']:
             c_p = limpar(info['pai'][1])
             niv_base = info.get('niv_base', niv_pai)
-            
-            # Filtra removendo os que viraram pais independentes
             mask = df[0].str.startswith(nv_p + ".")
             for excl in info.get('excluir_prefixos', []):
-                # Desconsidera o item exato (ex: 1.2.1) e todos os seus filhos (ex: 1.2.1.3)
                 mask = mask & ~(df[0] == excl) & ~df[0].str.startswith(excl + ".")
-                
             desc_df = df[mask].copy()
             p_is_p = is_prensado(info['pai'])
             
@@ -170,27 +134,10 @@ def processar_clipboard(is_teste=False):
             for br in b_roots.values(): 
                 if br['itens']: info['blocos'].append(br)
 
-            if any(len(b['itens']) > 0 for b in info['blocos']):
+            if any(len(b['itens']) > 0 for b in info['blocos']) or f_valido(info['pai']):
+                garantir_pasta()
+                if not info['blocos']: info['blocos'] = [{'tipo': 'normal', 'itens': [{'q_unitaria_fatorada': 1.0, **info['pai'].to_dict()}]}]
                 gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_p_total'], molde, pasta, p_is_p)
                 arquivos_gerados_count += 1
-            elif desc_df.empty and f_valido(info['pai']):
-                ic = info['pai'].copy().to_dict()
-                ic['q_unitaria_fatorada'] = 1.0
-                gerar_arquivo_excel(info['pai'], [{'tipo': 'normal', 'itens': [ic]}], id_p, info['qtd_p_total'], molde, pasta, p_is_p)
-                arquivos_gerados_count += 1
-        else: 
-            if any(len(b['itens']) > 0 for b in info['blocos']):
-                gerar_arquivo_excel(info['pai'], info['blocos'], id_p, info['qtd_p_total'], molde, pasta, False)
-                arquivos_gerados_count += 1
 
-    if arquivos_gerados_count == 0:
-        return {"pasta": str(pasta), "migrados": [], "repetidos": [], "aviso": "Nenhuma planilha gerada após filtros."}
-
-    if arquivos_para_arquivar and not is_teste:
-        dir_antigos = Path(REGRAS["diretorios"]["antigos"])
-        if not dir_antigos.exists(): os.makedirs(dir_antigos)
-        for arq_antigo in arquivos_para_arquivar:
-            try: shutil.move(arq_antigo, dir_antigos / os.path.basename(arq_antigo))
-            except: pass
-
-    return {"pasta": str(pasta), "migrados": arquivos_migrados, "repetidos": projetos_duplicados}
+    return {"pasta": str(pasta), "bloqueados": arquivos_bloqueados, "aviso": "Nada gerado." if arquivos_gerados_count == 0 and not arquivos_bloqueados else None}

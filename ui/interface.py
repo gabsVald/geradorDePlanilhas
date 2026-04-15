@@ -7,7 +7,6 @@ from utils.config import REGRAS
 from utils.updater import verificar_atualizacao
 from core.processador import processar_clipboard
 
-# Identidade Visual (Cores)
 COR_PRINCIPAL = "#d32732"
 COR_HOVER = "#a81f28"
 COR_TESTE = "#e67e22" 
@@ -109,7 +108,6 @@ class AppIngecon(ctk.CTk):
         self.progress.grid_forget()
         self.btn_processar.configure(state="normal")
         
-        # BUG 3: Verifica se houve aviso de "nada gerado"
         aviso = resultado.get("aviso")
         if aviso:
             self.status_label.configure(text="Aviso: Nada gerado.", text_color="#e67e22")
@@ -118,13 +116,11 @@ class AppIngecon(ctk.CTk):
 
         self.status_label.configure(text="Concluído!", text_color="#2ecc71")
         
-        if resultado.get("migrados"):
-            msg = "\n".join(sorted(set(resultado["migrados"])))
-            messagebox.showinfo("Migração Detectada", f"Projetos migrados:\n\n{msg}")
-            
-        if resultado.get("repetidos"):
-            msg = ", ".join(sorted(set(resultado["repetidos"])))
-            messagebox.showwarning("Repetidos", f"Projetos {msg} já existem e foram ignorados.")
+        # O novo alerta de bloqueio e aviso de localização da peça
+        if resultado.get("bloqueados"):
+            msg_bloqueados = "\n".join(sorted(set(resultado["bloqueados"])))
+            mensagem_alerta = f"⚠️ ATENÇÃO: As peças abaixo não foram geradas pois já existem na rede:\n\n{msg_bloqueados}\n\nCopie estes arquivos manualmente para a pasta atual se necessário."
+            messagebox.showwarning("Peças Repetidas Identificadas", mensagem_alerta)
             
         os.startfile(resultado["pasta"])
         messagebox.showinfo("Ingecon", "Concluído!")

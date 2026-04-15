@@ -124,19 +124,20 @@ def extrair_dados_migracao(caminho):
         return [], 1.0
 
 def mapear_rede_cache():
-    cache = {}
-    # Sobe um nível para buscar arquivos migrados em pastas de marcas/anos anteriores
+    cache = [] # Segurança: Lista em vez de dicionário para evitar sobreposição de nomes idênticos
     pasta_base = Path(REGRAS["diretorios"]["raiz"]).parent
     if pasta_base.exists():
         for root, _, files in os.walk(pasta_base):
             for f in files:
-                if f.lower().endswith(('.xlsx', '.ods', '.xlsm')): cache[f] = os.path.join(root, f)
+                if f.lower().endswith(('.xlsx', '.ods', '.xlsm')): 
+                    cache.append((f, os.path.join(root, f)))
     return cache
 
 def verificar_duplicidade_em_rede(codigo, cache_rede):
     c = str(codigo).strip()
     if not c: return None
-    padrao = re.compile(rf"^{re.escape(c)}(\D|$)")
-    for f, caminho in cache_rede.items():
+    # Segurança: Regex exige que o código seja seguido de um separador válido ou fim de string
+    padrao = re.compile(rf"^{re.escape(c)}(\s|-|_|\.|$)")
+    for f, caminho in cache_rede:
         if padrao.match(f): return caminho
     return None

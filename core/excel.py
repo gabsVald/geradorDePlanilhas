@@ -11,6 +11,21 @@ from openpyxl.styles import Font, Alignment, PatternFill
 from utils.config import REGRAS
 from utils.helpers import limpar, converter_para_numero, limpar_material_rigoroso, resource_path
 
+def buscar_valor_valido(item, indices):
+    """
+    Percorre uma lista de índices e retorna o primeiro valor numérico válido (> 0).
+    Ignora NaNs, zeros e strings vazias.
+    """
+    for idx in indices:
+        val = item.get(idx)
+        if val is not None:
+            texto = str(val).strip().lower()
+            if texto not in ["", "nan", "none", "0", "0,0", "0.0"]:
+                num = converter_para_numero(val)
+                if num and num > 0:
+                    return num
+    return 0
+
 def escrever_seguro(ws, coord, valor, alinhamento=None):
     try:
         cell = ws[coord]
@@ -38,7 +53,7 @@ def tratar_cabecalho_a1(ws, id_projeto):
     for sigla, nome in marcas_texto.items():
         if sigla in id_up:
             escrever_seguro(ws, 'A1', nome, Alignment(horizontal='center', vertical='center'))
-            ws['A1'].font = Font(size=22, bold=True)
+            ws['A1'].font = Font(name='Arial', size=22, bold=True)
             return
 
     for sigla, arq in logos_imagem.items():
@@ -78,11 +93,15 @@ def ajustar_molde_elastico(ws, num_itens):
     if diff > 0: ws.insert_rows(l_rodape, diff)
     elif diff < 0: ws.delete_rows(l_rodape + diff, abs(diff))
     
+    font_pecas = Font(name='Arial', size=14)
+    
     for r in range(6, 6 + num_itens):
         ws.row_dimensions[r].height = 35.25
         ws.cell(row=r, column=4).value = ws.cell(row=r, column=7).value = "X"
-        if r > 6:
-            for c in range(1, 16):
+        
+        for c in range(1, 16):
+            ws.cell(row=r, column=c).font = font_pecas
+            if r > 6:
                 src, tgt = ws.cell(row=6, column=c), ws.cell(row=r, column=c)
                 if src.has_style: tgt._style = copy(src._style)
                 
@@ -100,8 +119,10 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     
     fill_botao = PatternFill(start_color='0078D7', end_color='0078D7', fill_type='solid')
     fill_erro = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
-    font_botao = Font(color='FFFFFF', bold=True, size=10)
-    font_veio = Font(color='FFFFFF', bold=True, size=8)
+    font_botao = Font(name='Arial', color='FFFFFF', bold=True, size=10)
+    font_veio = Font(name='Arial', color='FFFFFF', bold=True, size=8)
+    font_arial_14 = Font(name='Arial', size=14)
+    font_arial_14_bold = Font(name='Arial', size=14, bold=True)
     align_botao = Alignment(horizontal='center', vertical='center')
 
     cod_p, acab_p, desc_p = limpar(pai[1]), limpar(pai[2]), limpar(pai[3])
@@ -109,57 +130,39 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     
     tratar_cabecalho_a1(ws, id_proj)
     escrever_seguro(ws, 'B3', tit)
+    ws['B3'].font = font_arial_14_bold
+    
     try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
     except: ws['A3'].value = qtd_tot
+    ws['A3'].font = font_arial_14
     
     ws['M2'].value = datetime.now().strftime('%d/%m/%Y')
+    ws['M2'].font = Font(name='Arial', size=22)
+    
     mat_veio = REGRAS["especiais"]["materiais_com_veio"]
     mat_esp = REGRAS["especiais"]["materiais_plus_5mm"]
 
     row_idx = 6
     for b in blocos:
-        # BUG 1: Inicializa desc_prensado para evitar NameError
-        desc_prensado = "" 
         bloco_e_prensado = (b['tipo'] == 'prensado' or pai_is_prensado)
-        is_bloco_migrado = any(item.get('is_migrado', False) for item in b['itens'])
         
-        espessura, dim_c, dim_f = "0", 0, 0
-        if bloco_e_prensado:
-            if is_bloco_migrado:
-                dim_c, dim_f = "-", "-"
-                desc_prensado = str(b['prensado_info'].get(3, desc_p))
-            else:
-                max_c, max_f = 0, 0
-                for item in b['itens']:
-                    v_c = converter_para_numero(limpar(item.get(15, "")) or item.get(8, ""))
-                    v_l = converter_para_numero(limpar(item.get(16, "")) or item.get(10, ""))
-                    if isinstance(v_c, (int, float)) and v_c > max_c: max_c = v_c
-                    if isinstance(v_l, (int, float)) and v_l > max_f: max_f = v_l
-                
-                titulo_bloco = limpar(b['prensado_info'][3]) if b['tipo'] == 'prensado' else desc_p
-                nums = re.findall(r'\d+', titulo_bloco)
-                espessura = nums[-1] if nums else "0"
-                dim_c = max_c - 10 if max_c > 10 else max_c
-                dim_f = max_f - 10 if max_f > 10 else max_f
-                desc_prensado = f"{int(dim_c)}X{int(dim_f)}X{espessura}"
-
         if b['tipo'] == 'prensado':
             ws.row_dimensions[row_idx].height = 15.75
             ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
             cell_h = ws.cell(row=row_idx, column=2)
             cell_h.value = f"{limpar(b['prensado_info'][1])} - {limpar(b['prensado_info'][3])}"
-            cell_h.font = Font(bold=True, size=15)
+            cell_h.font = Font(name='Arial', bold=True, size=15)
             cell_h.alignment = align_botao
             row_idx += 1
         
         for item in b['itens']:
             r, is_mig = row_idx, item.get('is_migrado', False)
+            desc_f = str(limpar(item.get(3, "")))
             if is_mig:
                 d_l, m_l = item['desc_orig'], item['mat_orig']
                 fita, veio = str(item['fita_orig']), item['veio_orig']
                 txt = f"{d_l} {m_l}".upper()
             else:
-                desc_f = str(limpar(item.get(3, "")))
                 txt = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
                 if any(m in txt for m in mat_esp): d_l = str(limpar(item.get(14, "")))
@@ -169,24 +172,24 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             plus = 5 if (any(m in txt for m in mat_esp) and not is_mig and not bloco_e_prensado) else 0
             val_fat = float(item.get('q_unitaria_fatorada', 0))
             
-            c_q = ws.cell(row=r, column=1)
-            c_q.value = f"={val_fat}*A3"
-            if val_fat == 0 and not is_mig: c_q.fill = fill_erro
+            # --- LÓGICA MULTI-COLUNA ROBUSTA (Correção do Acrílico) ---
+            # Comprimento: Prioridade Col 15 (FB) -> Col 8 (I) -> Col 9 (J)
+            v_c = buscar_valor_valido(item, [15, 8, 9])
+            # Largura: Prioridade Col 16 (FB) -> Col 10 (K) -> Col 11 (L)
+            v_l = buscar_valor_valido(item, [16, 10, 11])
+            # Altura: Prioridade Col 12 (M) -> Col 13 (N)
+            v_a = buscar_valor_valido(item, [12, 13])
+
+            if v_c > 0: v_c += plus
+            if v_l > 0: v_l += plus
             
-            v_c = converter_para_numero(limpar(item.get(15, "")) or item.get(8, ""))
-            if isinstance(v_c, (int, float)): v_c += plus
-            ws.cell(row=r, column=2).value = limpar(item.get(15, "")) if limpar(item.get(15, "")) in ["-", "="] else ""
+            ws.cell(row=r, column=1).value = f"={val_fat}*A3"
             ws.cell(row=r, column=3).value = v_c
-            ws.cell(row=r, column=4).value = "X"
-
-            v_l = converter_para_numero(limpar(item.get(16, "")) or item.get(10, ""))
-            if isinstance(v_l, (int, float)): v_l += plus
-            ws.cell(row=r, column=5).value = limpar(item.get(16, "")) if limpar(item.get(16, "")) in ["-", "="] else ""
             ws.cell(row=r, column=6).value = v_l
-            ws.cell(row=r, column=7).value = "X"
+            ws.cell(row=r, column=8).value = v_a
+            # ---------------------------------------------------------
 
-            ws.cell(row=r, column=8).value = converter_para_numero(item.get(12, ""))
-            ws.cell(row=r, column=12).value = desc_prensado if bloco_e_prensado else converter_para_numero(d_l)
+            ws.cell(row=r, column=12).value = d_l
             ws.cell(row=r, column=9).value = limpar_material_rigoroso(m_l)
 
             if is_mig: ws.cell(row=r, column=10).value = veio
@@ -209,16 +212,16 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             row_idx += 1
     
     escrever_seguro(ws, f"A{l_obs}", f"PROJETO DE REFERÊNCIA: {id_proj}", Alignment(horizontal='left'))
-    caminho = os.path.join(pasta, f"{re.sub(r'[\\/*?:\u0022<>|]', '', tit).strip()[:120]}.xlsm")
+    ws[f"A{l_obs}"].font = Font(name='Arial', size=12)
     
-    # BUG 2: Salvamento seguro .tmp + rename
+    nome_base_limpo = re.sub(r'[\\/*?:\u0022<>|]', '', tit).strip()[:120]
+    caminho = os.path.join(pasta, f"{nome_base_limpo}.xlsm")
+    
     caminho_tmp = caminho + ".tmp"
     try:
         wb.save(caminho_tmp)
-        if os.path.exists(caminho):
-            os.remove(caminho)
+        if os.path.exists(caminho): os.remove(caminho)
         os.rename(caminho_tmp, caminho)
     except Exception as e:
-        if os.path.exists(caminho_tmp):
-            os.remove(caminho_tmp)
+        if os.path.exists(caminho_tmp): os.remove(caminho_tmp)
         raise e
