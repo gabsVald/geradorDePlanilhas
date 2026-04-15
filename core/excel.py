@@ -212,7 +212,7 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             row_idx += 1
     
     escrever_seguro(ws, f"A{l_obs}", f"PROJETO DE REFERÊNCIA: {id_proj}", Alignment(horizontal='left'))
-    ws[f"A{l_obs}"].font = Font(name='Arial', size=12)
+    ws[f"A{l_obs}"].font = Font(name='Arial Black', size=22, bold= True)
     
     nome_base_limpo = re.sub(r'[\\/*?:\u0022<>|]', '', tit).strip()[:120]
     caminho = os.path.join(pasta, f"{nome_base_limpo}.xlsm")

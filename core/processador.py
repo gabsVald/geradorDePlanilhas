@@ -78,6 +78,7 @@ def processar_clipboard(is_teste=False):
             if nv_pai_str in cons:
                 pai_r = cons[nv_pai_str]['pai']
                 if limpar(pai_r[1]).startswith('15') and not limpar(pai_r[2]) and acab:
+                 if acab and acab != "YF54":     
                     if nv not in cons:
                         qtd_p = cons[nv_pai_str]['qtd_p_total']
                         qtd_f = float(converter_para_numero(r[5]) or 0)
