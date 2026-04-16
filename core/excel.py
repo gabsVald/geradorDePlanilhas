@@ -172,7 +172,15 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 fita_col_e = str(limpar(item.get(16, "")))  # col Q → coluna E da planilha
                 fita_b = fita_col_b if fita_col_b in ['-', '='] else None
                 fita_e = fita_col_e if fita_col_e in ['-', '='] else None
-                fita = "SEC-LAM" if (fita_b or fita_e) else "SEC"
+                _madeira_bruta = any(m in txt for m in ["MADEIRA BRUTA PINUS", "MADEIRA BRUTA TAUARI"])
+                if _madeira_bruta and (fita_b or fita_e):
+                    fita = "SERRA-LAM"
+                elif _madeira_bruta:
+                    fita = "SERRA"
+                elif (fita_b or fita_e):
+                    fita = "SEC-LAM"
+                else:
+                    fita = "SEC"
                 veio = None
 
             plus = 5 if (any(m in txt for m in mat_esp) and not is_mig and not bloco_e_prensado) else 0
