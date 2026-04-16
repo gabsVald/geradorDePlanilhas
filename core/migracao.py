@@ -25,16 +25,26 @@ def extrair_dados_migracao(caminho):
         if str(caminho).lower().endswith('.ods'):
             df_old = pd.read_excel(caminho, engine='odf', header=None).fillna('')
             while df_old.shape[1] < 15: df_old[df_old.shape[1]] = ''
-            a3_valor = float(converter_para_numero(df_old.iloc[2, 0]) or 1.0)
+
+            # A3 está na col 1 da linha 2 (não col 0)
+            # A3 pode estar em col 0 (sem coluna QNT) ou col 1 (com coluna QNT)
+            _a3_raw = df_old.iloc[2, 0] if str(df_old.iloc[2, 0]).strip() not in ['', 'nan', 'QNT'] else df_old.iloc[2, 1]
+            a3_valor = float(converter_para_numero(_a3_raw) or 1.0)
             a3_valor = 1.0 if a3_valor == 0 else a3_valor
-            
+
+            # Código da peça está no título: row 1, col 2, antes do " - "
+            titulo_raw = limpar(df_old.iloc[1, 2])
+            cod_titulo = titulo_raw.split(' - ', 1)[0].strip() if ' - ' in titulo_raw else ''
+
             blocos = []
             bloco_atual = {'tipo': 'normal', 'itens': []}
-            
+
             for r in range(5, len(df_old)):
                 c0 = limpar(df_old.iloc[r, 0])
-                cod = limpar(df_old.iloc[r, 12])
-                desc = limpar(df_old.iloc[r, 11])
+                # col 11 = código do material (MP), não o código da peça
+                # col 9  = descrição do material
+                cod  = cod_titulo                     # código da peça vem do título
+                desc = limpar(df_old.iloc[r, 9])      # material/descrição
                 
                 if any(t in str(c0).upper() for t in termos_ignorar) or \
                    any(t in str(cod).upper() for t in termos_ignorar) or \
@@ -51,18 +61,33 @@ def extrair_dados_migracao(caminho):
                     bloco_atual = {'tipo': 'prensado', 'prensado_info': {1: f_cod, 3: f_desc}, 'itens': []}
                     continue
 
-                comp = limpar(df_old.iloc[r, 2])
-                larg = limpar(df_old.iloc[r, 5])
-                if not cod and not desc and not comp and not larg: continue
+                comp = limpar(df_old.iloc[r, 3])   # col 3 no ODS
+                larg = limpar(df_old.iloc[r, 6])   # col 6 no ODS
+                # Linha sem dados úteis: pula se não tem dimensões nem descrição
+                if not comp and not larg and not desc: continue
 
-                try: f_b = float(converter_para_numero(df_old.iloc[r, 0]) or 0)
-                except: f_b = 0.0
-                
+                # col0 comportamento depende do layout:
+                # - Com UN (col1 numérico): col0 é qtd absoluta → dividir por a3
+                # - Sem UN: col0 já é o fator unitário direto
+                try: f_b_raw = float(converter_para_numero(df_old.iloc[r, 0]) or 0)
+                except: f_b_raw = 0.0
+
+                # Layout ODS varia: col1 com UN → dims em 3/6/8; sem UN → dims em 2/5/7
+                _tem_un = str(df_old.iloc[r, 1]).strip() not in ['', 'nan']
+                _dc, _dl, _da, _dm, _df, _dd = (3,6,8,9,10,11) if _tem_un else (2,5,7,8,10,11)
                 item = {
-                    1: cod, 15: df_old.iloc[r, 1], 8: comp, 16: df_old.iloc[r, 4], 10: larg,
-                    12: limpar(df_old.iloc[r, 7]), 'mat_orig': limpar(df_old.iloc[r, 8]), 
-                    'veio_orig': df_old.iloc[r, 9], 'fita_orig': df_old.iloc[r, 10], 
-                    'desc_orig': desc, 'q_unitaria_fatorada': f_b / a3_valor if a3_valor > 0 else f_b, 
+                    # Regra: se estava vazio no ODS, deve ficar vazio no novo arquivo
+                    1: limpar(df_old.iloc[r, 12]),   # código do item (col 12) — pode ser vazio
+                    8:  limpar(df_old.iloc[r, _dc]),  # Comprimento
+                    10: limpar(df_old.iloc[r, _dl]),  # Largura
+                    12: limpar(df_old.iloc[r, _da]),  # Altura/espessura
+                    'mat_orig':  limpar(df_old.iloc[r, _dm]),
+                    'veio_orig': None,                             # ODS não tem coluna de veio
+                    'fita_orig': limpar(df_old.iloc[r, _df]),      # processo/fita
+                    'desc_orig': limpar(df_old.iloc[r, _dd]),      # descrição/código MP
+                    # Com UN (col1 numérico): col0 é fator unitário → NÃO dividir
+                    # Sem UN (col1 vazio):    col0 é qtd absoluta  → dividir por a3
+                    'q_unitaria_fatorada': (f_b_raw if _tem_un else (f_b_raw / a3_valor if a3_valor > 0 else f_b_raw)),
                     'is_migrado': True
                 }
                 bloco_atual['itens'].append(item)

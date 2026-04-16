@@ -19,23 +19,32 @@ def limpar(val):
     if v.endswith('.0'): 
         v = v[:-2]
     return v if v.lower() not in ['nan', 'none', 'null', ''] else ""
-#
-def converter_para_numero(valor):
-    """Converte strings para inteiros arredondados."""
+
+def converter_para_numero(valor, retornar_marcador=False):
+    """Converte strings para inteiros arredondados. Evita erros de str > int."""
     limpo = limpar(valor)
-    if not limpo or limpo in ["-", "="]: 
-        return limpo
+    if not limpo: 
+        return "" if retornar_marcador else None
+    if limpo in ["-", "="]: 
+        return limpo if retornar_marcador else None
     try:
         v_aj = limpo.replace(',', '.')
         val_float = float(v_aj)
         return int(val_float + 0.5) if val_float >= 0 else int(val_float - 0.5)
     except Exception: 
-        return limpo
+        return limpo if retornar_marcador else None
 
 def limpar_material_rigoroso(texto):
-    """Remove termos técnicos e dimensões da descrição do material."""
-    if not texto: 
-        return ""
-    t = re.sub(r'\b(ORIG|ESS)\b', '', str(texto), flags=re.IGNORECASE).replace('=', '')
-    t = re.sub(r'\s*\b\d+(?:[\.,]\d+)?\s*[xX].*$', '', t, flags=re.IGNORECASE)
-    return re.sub(r'\s+', ' ', t).strip(' -')
+    """
+    Limpa a string de material para exibição na planilha.
+    Remove: ORIG, ESS (word boundary), '=', e dimensões no padrão NxN ou NxNxN.
+    NÃO remove nomes de materiais (MDF, CRU, etc.) — esses já são filtrados
+    pelo f_valido() antes de chegar aqui.
+    """
+    t = str(texto).upper()
+    t = t.replace('=', '')
+    t = re.sub(r'\bORIG\b', '', t)
+    t = re.sub(r'\bESS\b', '', t)
+    t = re.sub(r'\b\d+([,\.]\d+)?(X\d+([,\.]\d+)?){1,2}(MM)?\b', '', t)
+    t = re.sub(r'\b\d+([,\.]\d+)?\s*MM\b', '', t)
+    return re.sub(r'\s+', ' ', t).strip()

@@ -161,12 +161,18 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             if is_mig:
                 d_l, m_l = item['desc_orig'], item['mat_orig']
                 fita, veio = str(item['fita_orig']), item['veio_orig']
+                fita_b, fita_e = None, None  # migrados não reescrevem colunas B/E
                 txt = f"{d_l} {m_l}".upper()
             else:
                 txt = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
                 if any(m in txt for m in mat_esp): d_l = str(limpar(item.get(14, "")))
-                fita = "SEC-LAM" if any(str(limpar(item.get(x, ""))) in ['-', '='] for x in [15, 16]) else "SEC"
+                # Lê os valores brutos das colunas P (15) e Q (16) do CSV
+                fita_col_b = str(limpar(item.get(15, "")))  # col P → coluna B da planilha
+                fita_col_e = str(limpar(item.get(16, "")))  # col Q → coluna E da planilha
+                fita_b = fita_col_b if fita_col_b in ['-', '='] else None
+                fita_e = fita_col_e if fita_col_e in ['-', '='] else None
+                fita = "SEC-LAM" if (fita_b or fita_e) else "SEC"
                 veio = None
 
             plus = 5 if (any(m in txt for m in mat_esp) and not is_mig and not bloco_e_prensado) else 0
@@ -184,6 +190,15 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             if v_l > 0: v_l += plus
             
             ws.cell(row=r, column=1).value = f"={val_fat}*A3"
+            # Fitas de borda: col P (15) → coluna B (2) | col Q (16) → coluna E (5)
+            font_fita = Font(name="Arial", size=28, bold=True)
+            if not is_mig:
+                if fita_b:
+                    c = ws.cell(row=r, column=2)
+                    c.value, c.font = fita_b, font_fita
+                if fita_e:
+                    c = ws.cell(row=r, column=5)
+                    c.value, c.font = fita_e, font_fita
             ws.cell(row=r, column=3).value = v_c
             ws.cell(row=r, column=6).value = v_l
             ws.cell(row=r, column=8).value = v_a
@@ -199,7 +214,10 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 if tem_v: ws.cell(row=r, column=10).value = 1
             
             ws.cell(row=r, column=11).value = fita
-            ws.cell(row=r, column=13).value = converter_para_numero(item.get(1, ""))
+            # col 13: código do item — pode ser numérico ou texto (ex: 'PÇ 1')
+            _cod_raw = item.get(1, "")
+            _cod_num = converter_para_numero(_cod_raw)
+            ws.cell(row=r, column=13).value = _cod_num if _cod_num is not None else limpar(_cod_raw) or None
             
             if ws.cell(row=r, column=10).value == 1:
                 cv = ws.cell(row=r, column=15)

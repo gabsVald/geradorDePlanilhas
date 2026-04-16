@@ -1,5 +1,5 @@
 {
-  "versao_atual": "2.2.07",
+  "versao_atual": "2.2.08",
   "diretorios": {
     "raiz": "X:\\Egpe\\06 - PLANOS DE CORTE ATUALIZADOS\\PLANOS DE CORTE 2026",
     "antigos": "X:\\Egpe\\ANTIGOS - NÃO USAR",
@@ -20,7 +20,7 @@
   },
   "especiais": {
     "materiais_plus_5mm": ["KRION", "DURASEIN", "CORIAN", "TS"],
-    "materiais_com_veio": ["CARVALHO EUROPEU", "OKUME", "LUPA", "PINUS", "ITAPUA", "CARVALHO MEL"],
+    "materiais_com_veio": ["CARVALHO EUROPEU", "OKUME", "LUPA", "PINUS", "ITAPUA", "CARVALHO MEL", "CRV EUROPEU", "MDF EUROPEU", "MDF 2F CRV EUROPEU (LAM AP)" ],
     "marcas_texto": {
       "ZAR": "ZARA", "ZFR": "ZAFFARI", "SEP": "SEPHORA", "PRO": "PROTÓTIPO"
     },
