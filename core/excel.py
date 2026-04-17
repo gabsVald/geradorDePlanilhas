@@ -112,35 +112,22 @@ def ajustar_molde_elastico(ws, num_itens):
     return n_inicio
 
 
-def _sufixo_dimensional(itens):
+def _sufixo_dimensional(itens, fonte_espessura):
     """
-    Extrai as dimensões consolidadas (maior valor) dos itens de um bloco prensado.
-    Aplica o desconto técnico de -10mm no Comprimento e na Largura.
+    Extrai as dimensões consolidadas dos itens de um bloco prensado.
+    Comprimento e Largura = maior valor entre todos os itens - 10.
+    Espessura = vem do título do prensado (prensado_info ou pai), não dos itens.
     Retorna uma string " CxLxE" ou "" se faltar alguma medida.
     """
     if not itens:
         return ""
-
-    max_c, max_l, max_e = 0, 0, 0
-
-    for item in itens:
-        c = buscar_valor_valido(item, [8, 15])
-        l = buscar_valor_valido(item, [10, 16])
-        e = buscar_valor_valido(item, [12, 13])
-
-        if c and c > max_c: max_c = c
-        if l and l > max_l: max_l = l
-        if e and e > max_e: max_e = e
-
-    if max_c and max_l and max_e:
-        comp_final = int(max_c) - 10
-        larg_final = int(max_l) - 10
-        esp_final = int(max_e)
-
-        # Previne a formatação com valores tecnicamente inválidos após a dedução
-        if comp_final > 0 and larg_final > 0:
-            return f" {comp_final}X{larg_final}X{esp_final}"
-
+    max_c = max((buscar_valor_valido(i, [8, 15]) for i in itens), default=0)
+    max_l = max((buscar_valor_valido(i, [10, 16]) for i in itens), default=0)
+    v_e = buscar_valor_valido(fonte_espessura, [12, 13])
+    v_c = max_c - 10 if max_c else 0
+    v_l = max_l - 10 if max_l else 0
+    if v_c > 0 and v_l > 0 and v_e:
+        return f" {int(v_c)}X{int(v_l)}X{int(v_e)}"
     return ""
 
 def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_prensado):
@@ -150,6 +137,7 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     l_obs = ajustar_molde_elastico(ws, total_itens)
     
     fill_botao = PatternFill(start_color='0078D7', end_color='0078D7', fill_type='solid')
+    fill_erro = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
     font_botao = Font(name='Arial', color='FFFFFF', bold=True, size=10)
     font_veio = Font(name='Arial', color='FFFFFF', bold=True, size=8)
     font_arial_14 = Font(name='Arial', size=14)
@@ -158,12 +146,7 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
 
     cod_p, acab_p, desc_p = limpar(pai[1]), limpar(pai[2]), limpar(pai[3])
     tit_base = f"{cod_p}_{acab_p.strip(' _-')} - {desc_p}" if acab_p.strip(' _-') else f"{cod_p} - {desc_p}"
-    
-    if pai_is_prensado:
-        _todos_itens = [i for b in blocos for i in b['itens']]
-        tit = tit_base + _sufixo_dimensional(_todos_itens)
-    else:
-        tit = tit_base
+    tit = tit_base
     
     tratar_cabecalho_a1(ws, id_proj)
     escrever_seguro(ws, 'B3', tit)
@@ -187,8 +170,7 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             ws.row_dimensions[row_idx].height = 15.75
             ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
             cell_h = ws.cell(row=row_idx, column=2)
-            _suf = _sufixo_dimensional(b['itens'])
-            cell_h.value = f"{limpar(b['prensado_info'][1])} - {limpar(b['prensado_info'][3])}{_suf}"
+            cell_h.value = f"{limpar(b['prensado_info'][1])} - {limpar(b['prensado_info'][3])}"
             cell_h.font = Font(name='Arial', bold=True, size=15)
             cell_h.alignment = align_botao
             row_idx += 1
@@ -199,18 +181,17 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             if is_mig:
                 d_l, m_l = item['desc_orig'], item['mat_orig']
                 fita, veio = str(item['fita_orig']), item['veio_orig']
-                fita_b, fita_e = None, None
+                fita_b, fita_e = None, None  # migrados não reescrevem colunas B/E
                 txt = f"{d_l} {m_l}".upper()
             else:
                 txt = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
                 if any(m in txt for m in mat_esp): d_l = str(limpar(item.get(14, "")))
-                
-                fita_col_b = str(limpar(item.get(15, "")))
-                fita_col_e = str(limpar(item.get(16, "")))
+                # Lê os valores brutos das colunas P (15) e Q (16) do CSV
+                fita_col_b = str(limpar(item.get(15, "")))  # col P → coluna B da planilha
+                fita_col_e = str(limpar(item.get(16, "")))  # col Q → coluna E da planilha
                 fita_b = fita_col_b if fita_col_b in ['-', '='] else None
                 fita_e = fita_col_e if fita_col_e in ['-', '='] else None
-                
                 _madeira_bruta = any(m in txt for m in ["MADEIRA BRUTA PINUS", "MADEIRA BRUTA TAUARI"])
                 if _madeira_bruta and (fita_b or fita_e):
                     fita = "SERRA-LAM"
@@ -225,15 +206,19 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             plus = 5 if (any(m in txt for m in mat_esp) and not is_mig and not bloco_e_prensado) else 0
             val_fat = float(item.get('q_unitaria_fatorada', 0))
             
+            # --- LÓGICA MULTI-COLUNA ROBUSTA (Correção do Acrílico) ---
+            # Comprimento: Prioridade Col 15 (FB) -> Col 8 (I) -> Col 9 (J)
             v_c = buscar_valor_valido(item, [15, 8, 9])
+            # Largura: Prioridade Col 16 (FB) -> Col 10 (K) -> Col 11 (L)
             v_l = buscar_valor_valido(item, [16, 10, 11])
+            # Altura: Prioridade Col 12 (M) -> Col 13 (N)
             v_a = buscar_valor_valido(item, [12, 13])
 
             if v_c > 0: v_c += plus
             if v_l > 0: v_l += plus
             
             ws.cell(row=r, column=1).value = f"={val_fat}*A3"
-            
+            # Fitas de borda: col P (15) → coluna B (2) | col Q (16) → coluna E (5)
             font_fita = Font(name="Arial", size=28, bold=True)
             if not is_mig:
                 if fita_b:
@@ -242,22 +227,28 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 if fita_e:
                     c = ws.cell(row=r, column=5)
                     c.value, c.font = fita_e, font_fita
-                    
             ws.cell(row=r, column=3).value = v_c
             ws.cell(row=r, column=6).value = v_l
             ws.cell(row=r, column=8).value = v_a
-            ws.cell(row=r, column=12).value = d_l
+            # ---------------------------------------------------------
+
+            # Dentro de prensado: descrição é substituída pelas medidas (CxLxE)
+            if bloco_e_prensado and not is_mig:
+                _suf_itens = _sufixo_dimensional(b['itens'], b.get('prensado_info', pai))
+                d_l_final = _suf_itens.strip() if _suf_itens else d_l
+            else:
+                d_l_final = d_l
+            ws.cell(row=r, column=12).value = d_l_final
             ws.cell(row=r, column=9).value = limpar_material_rigoroso(m_l)
 
-            if is_mig: 
-                ws.cell(row=r, column=10).value = veio
+            if is_mig: ws.cell(row=r, column=10).value = veio
             else:
                 tem_v = any(m in txt for m in mat_veio)
                 if "KRION" in txt and str(converter_para_numero(item.get(12, ""))) == "3": tem_v = True
                 if tem_v: ws.cell(row=r, column=10).value = 1
             
             ws.cell(row=r, column=11).value = fita
-            
+            # col 13: código do item — pode ser numérico ou texto (ex: 'PÇ 1')
             _cod_raw = item.get(1, "")
             _cod_num = converter_para_numero(_cod_raw)
             ws.cell(row=r, column=13).value = _cod_num if _cod_num is not None else limpar(_cod_raw) or None
@@ -273,9 +264,9 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             row_idx += 1
     
     escrever_seguro(ws, f"A{l_obs}", f"PROJETO DE REFERÊNCIA: {id_proj}", Alignment(horizontal='left'))
-    ws[f"A{l_obs}"].font = Font(name='Arial Black', size=22, bold=True)
+    ws[f"A{l_obs}"].font = Font(name='Arial Black', size=22, bold= True)
     
-    nome_base_limpo = re.sub(r'[\\/*?:"<>|]', '', tit).strip()[:120]
+    nome_base_limpo = re.sub(r'[\\/*?:\u0022<>|]', '', tit).strip()[:120]
     caminho = os.path.join(pasta, f"{nome_base_limpo}.xlsm")
     
     caminho_tmp = caminho + ".tmp"
