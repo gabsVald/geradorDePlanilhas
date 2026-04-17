@@ -1,10 +1,25 @@
 import os
 import re
+import json
 from pathlib import Path
 import pandas as pd
 from openpyxl import load_workbook
 from utils.config import REGRAS
 from utils.helpers import limpar, converter_para_numero
+
+# Carrega mapeamento MP → material atualizado
+_MAP_MP_PATH = Path(__file__).parent.parent / "mapeamento.json"
+try:
+    with open(_MAP_MP_PATH, encoding='utf-8') as _f:
+        _MAP_MP = json.load(_f)
+except Exception:
+    _MAP_MP = {}
+
+def _material_por_mp(mp_raw: str, fallback: str) -> str:
+    """Retorna o nome atualizado do material a partir do código MP.
+    Se não encontrar no mapeamento, usa o fallback (nome original do arquivo)."""
+    mp = str(mp_raw).strip()
+    return _MAP_MP.get(mp, fallback)
 
 def is_prensado_migracao(cod, desc, col_a=""):
     d_up = str(desc).upper()
@@ -46,9 +61,12 @@ def extrair_dados_migracao(caminho):
                 cod  = cod_titulo                     # código da peça vem do título
                 desc = limpar(df_old.iloc[r, 9])      # material/descrição
                 
+                # Filtro de termos: c0 com todos; desc/cod só com termos longos (>=4 chars)
+                # Evita 'UN' dentro de 'FUNDO' mas captura 'PROGRAMAÇÃO', 'MATERIAL' etc.
+                _termos_longos = [t for t in termos_ignorar if len(t) >= 4]
                 if any(t in str(c0).upper() for t in termos_ignorar) or \
-                   any(t in str(cod).upper() for t in termos_ignorar) or \
-                   any(t in str(desc).upper() for t in termos_ignorar):
+                   any(t in str(desc).upper() for t in _termos_longos) or \
+                   any(t in str(cod).upper() for t in _termos_longos):
                     continue
 
                 if is_prensado_migracao(cod, desc, c0):
@@ -72,9 +90,15 @@ def extrair_dados_migracao(caminho):
                 try: f_b_raw = float(converter_para_numero(df_old.iloc[r, 0]) or 0)
                 except: f_b_raw = 0.0
 
-                # Layout ODS varia: col1 com UN → dims em 3/6/8; sem UN → dims em 2/5/7
-                _tem_un = str(df_old.iloc[r, 1]).strip() not in ['', 'nan']
+                # Layout ODS varia: col1 com UN (número) → dims em 3/6/8
+                # col1 vazio, '-' ou '=' = sem UN → dims em 2/5/7
+                _col1_raw = str(df_old.iloc[r, 1]).strip()
+                _tem_un = bool(converter_para_numero(_col1_raw)) if _col1_raw not in ['', 'nan'] else False
                 _dc, _dl, _da, _dm, _df, _dd = (3,6,8,9,10,11) if _tem_un else (2,5,7,8,10,11)
+                # Fita de borda lateral: col1 com '-' ou '=' no ODS
+                _fita_lat = _col1_raw if _col1_raw in ['-', '='] else None
+                # Fita de borda topo: col4 com '-' ou '=' no ODS
+                _fita_top = str(df_old.iloc[r, 4]).strip() if str(df_old.iloc[r, 4]).strip() in ['-', '='] else None
                 item = {
                     # Regra: se estava vazio no ODS, deve ficar vazio no novo arquivo
                     1: limpar(df_old.iloc[r, 12]),   # código do item (col 12) — pode ser vazio
@@ -84,6 +108,8 @@ def extrair_dados_migracao(caminho):
                     'mat_orig':  limpar(df_old.iloc[r, _dm]),
                     'veio_orig': None,                             # ODS não tem coluna de veio
                     'fita_orig': limpar(df_old.iloc[r, _df]),      # processo/fita
+                    'fita_lat':  _fita_lat,                        # '-' ou '=' da col1 (borda lateral)
+                    'fita_top':  _fita_top,                        # '-' ou '=' da col4 (borda topo)
                     'desc_orig': limpar(df_old.iloc[r, _dd]),      # descrição/código MP
                     # Com UN (col1 numérico): col0 é fator unitário → NÃO dividir
                     # Sem UN (col1 vazio):    col0 é qtd absoluta  → dividir por a3
@@ -109,9 +135,12 @@ def extrair_dados_migracao(caminho):
                 cod = limpar(ws_d.cell(row=r, column=13).value)
                 desc = limpar(ws_d.cell(row=r, column=12).value)
 
+                # Filtro de termos: c0 com todos; desc/cod só com termos longos (>=4 chars)
+                # Evita 'UN' dentro de 'FUNDO' mas captura 'PROGRAMAÇÃO', 'MATERIAL' etc.
+                _termos_longos = [t for t in termos_ignorar if len(t) >= 4]
                 if any(t in str(c0).upper() for t in termos_ignorar) or \
-                   any(t in str(cod).upper() for t in termos_ignorar) or \
-                   any(t in str(desc).upper() for t in termos_ignorar):
+                   any(t in str(desc).upper() for t in _termos_longos) or \
+                   any(t in str(cod).upper() for t in _termos_longos):
                     continue
 
                 if is_prensado_migracao(cod, desc, c0):
@@ -131,12 +160,24 @@ def extrair_dados_migracao(caminho):
                 try: f_b = float(converter_para_numero(c0_raw) or 0)
                 except: f_b = 0.0
                 
+                # Fita de borda XLSX: col 2 = lateral (B), col 5 = topo (E)
+                _xlsx_fita_lat = ws_d.cell(row=r, column=2).value
+                _xlsx_fita_top = ws_d.cell(row=r, column=5).value
+                _fita_lat_xlsx = str(_xlsx_fita_lat).strip() if str(_xlsx_fita_lat).strip() in ['-', '='] else None
+                _fita_top_xlsx = str(_xlsx_fita_top).strip() if str(_xlsx_fita_top).strip() in ['-', '='] else None
+                # col 9=VEIO, col 10=PROCESSO, col 11=DESCRIÇÃO
+                _veio_xlsx   = ws_d.cell(row=r, column=10).value
+                _fita_xlsx   = limpar(ws_d.cell(row=r, column=11).value) or ''
                 item = {
-                    1: cod, 15: ws_d.cell(row=r, column=2).value, 8: comp, 16: ws_d.cell(row=r, column=5).value, 
-                    10: larg, 12: limpar(ws_d.cell(row=r, column=8).value), 
-                    'mat_orig': limpar(ws_d.cell(row=r, column=9).value), 
-                    'veio_orig': ws_d.cell(row=r, column=10).value, 'fita_orig': ws_d.cell(row=r, column=11).value, 
-                    'desc_orig': desc, 'q_unitaria_fatorada': f_b / a3_valor if a3_valor > 0 else f_b, 
+                    1: cod, 8: comp, 10: larg,
+                    12: limpar(ws_d.cell(row=r, column=8).value),
+                    'mat_orig':  limpar(ws_d.cell(row=r, column=9).value),
+                    'veio_orig': _veio_xlsx,
+                    'fita_orig': _fita_xlsx,
+                    'fita_lat':  _fita_lat_xlsx,
+                    'fita_top':  _fita_top_xlsx,
+                    'desc_orig': desc,
+                    'q_unitaria_fatorada': f_b / a3_valor if a3_valor > 0 else f_b,
                     'is_migrado': True
                 }
                 bloco_atual['itens'].append(item)

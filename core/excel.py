@@ -181,7 +181,9 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             if is_mig:
                 d_l, m_l = item['desc_orig'], item['mat_orig']
                 fita, veio = str(item['fita_orig']), item['veio_orig']
-                fita_b, fita_e = None, None  # migrados não reescrevem colunas B/E
+                # Fitas de borda do ODS: col1=lateral(B), col4=topo(E)
+                fita_b = item.get('fita_lat')  # '-' ou '=' ou None
+                fita_e = item.get('fita_top')  # '-' ou '=' ou None
                 txt = f"{d_l} {m_l}".upper()
             else:
                 txt = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
@@ -220,13 +222,16 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             ws.cell(row=r, column=1).value = f"={val_fat}*A3"
             # Fitas de borda: col P (15) → coluna B (2) | col Q (16) → coluna E (5)
             font_fita = Font(name="Arial", size=28, bold=True)
-            if not is_mig:
-                if fita_b:
-                    c = ws.cell(row=r, column=2)
-                    c.value, c.font = fita_b, font_fita
-                if fita_e:
-                    c = ws.cell(row=r, column=5)
-                    c.value, c.font = fita_e, font_fita
+            # Fitas de borda: aplicar para normais e migrados
+            # Nota: openpyxl grava '-' e '=' como texto automaticamente (não há risco de fórmula)
+            if fita_b:
+                c = ws.cell(row=r, column=2)
+                c.value, c.font = fita_b, font_fita
+                c.data_type = 's'  # força string, evita interpretação como fórmula
+            if fita_e:
+                c = ws.cell(row=r, column=5)
+                c.value, c.font = fita_e, font_fita
+                c.data_type = 's'  # força string, evita interpretação como fórmula
             ws.cell(row=r, column=3).value = v_c
             ws.cell(row=r, column=6).value = v_l
             ws.cell(row=r, column=8).value = v_a
@@ -257,7 +262,7 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 cv = ws.cell(row=r, column=15)
                 cv.value, cv.fill, cv.font, cv.alignment = "⇄", fill_botao, font_veio, align_botao
             
-            if not bloco_e_prensado and not any(m in txt for m in mat_esp):
+            if not is_mig and not bloco_e_prensado and not any(m in txt for m in mat_esp):
                 cn = ws.cell(row=r, column=14)
                 cn.value, cn.fill, cn.font, cn.alignment = "+5", fill_botao, font_botao, align_botao
             
