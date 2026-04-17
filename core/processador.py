@@ -29,6 +29,9 @@ def f_valido(f):
        any(x in mc for x in filtros["materiais_ignorados"]): return False
     if '*' in a and not c.startswith(tuple(filtros["prefixos_validos"])): return False
     if mc.startswith(tuple(filtros["mp_iniciais_ignoradas"])):
+        # Exceção: LAMINADO FORM passa mesmo com MP bloqueado
+        if "LAMINADO FORM" in d:
+            return c.startswith(tuple(filtros["prefixos_validos"]))
         is_especial = any(m in d for m in REGRAS["especiais"]["materiais_plus_5mm"]) or re.search(r'\bTS\b', d)
         return c.startswith(tuple(filtros["prefixos_validos"])) if is_especial else False
     return c.startswith(tuple(filtros["prefixos_validos"]))
@@ -120,6 +123,18 @@ def _migrar_arquivo_com_seguranca(caminho_original: Path, pasta_destino: Path,
             destino_antigo = _PASTA_ANTIGOS / f"{stem}_{sufixo}{ext}"
 
         shutil.move(str(caminho_original), str(destino_antigo))
+
+        # shutil.move entre volumes de rede diferentes pode copiar sem apagar a origem.
+        # Garantimos a remoção explicitamente após confirmar que o destino existe.
+        if destino_antigo.exists() and caminho_original.exists():
+            try:
+                caminho_original.unlink()
+            except Exception as del_err:
+                raise Exception(
+                    f"[MIGRAÇÃO PARCIAL — ETAPA 4] Arquivo copiado para ANTIGOS mas não foi "
+                    f"possível remover o original: {del_err}\n"
+                    f"Remova manualmente: '{caminho_original}'"
+                )
 
     except Exception as e:
         # Geração foi bem-sucedida mas não conseguimos mover o original.
