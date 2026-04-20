@@ -93,10 +93,10 @@ def ajustar_molde_elastico(ws, num_itens):
     if diff > 0: ws.insert_rows(l_rodape, diff)
     elif diff < 0: ws.delete_rows(l_rodape + diff, abs(diff))
     
-    font_pecas = Font(name='Arial', size=14)
+    font_pecas = Font(name='Arial', size=10)
     
     for r in range(6, 6 + num_itens):
-        ws.row_dimensions[r].height = 35.25
+        ws.row_dimensions[r].height = 25.5
         ws.cell(row=r, column=4).value = ws.cell(row=r, column=7).value = "X"
         
         for c in range(1, 16):
@@ -140,8 +140,8 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     fill_erro = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
     font_botao = Font(name='Arial', color='FFFFFF', bold=True, size=10)
     font_veio = Font(name='Arial', color='FFFFFF', bold=True, size=8)
-    font_arial_14 = Font(name='Arial', size=14)
-    font_arial_14_bold = Font(name='Arial', size=14, bold=True)
+    font_arial_14 = Font(name='Arial', size=10)
+    font_arial_14_bold = Font(name='Arial', size=10, bold=True)
     align_botao = Alignment(horizontal='center', vertical='center')
 
     cod_p, acab_p, desc_p = limpar(pai[1]), limpar(pai[2]), limpar(pai[3])
@@ -157,7 +157,7 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     ws['A3'].font = font_arial_14
     
     ws['M2'].value = datetime.now().strftime('%d/%m/%Y')
-    ws['M2'].font = Font(name='Arial', size=22)
+    ws['M2'].font = Font(name='Arial1', size=12)
     
     mat_veio = REGRAS["especiais"]["materiais_com_veio"]
     mat_esp = REGRAS["especiais"]["materiais_plus_5mm"]
@@ -167,11 +167,11 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
         bloco_e_prensado = (b['tipo'] == 'prensado' or pai_is_prensado)
         
         if b['tipo'] == 'prensado':
-            ws.row_dimensions[row_idx].height = 15.75
+            ws.row_dimensions[row_idx].height = 25.5
             ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
             cell_h = ws.cell(row=row_idx, column=2)
             cell_h.value = f"{limpar(b['prensado_info'][1])} - {limpar(b['prensado_info'][3])}"
-            cell_h.font = Font(name='Arial', bold=True, size=15)
+            cell_h.font = Font(name='Arial', bold=True, size=11)
             cell_h.alignment = align_botao
             row_idx += 1
         
@@ -221,7 +221,7 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             
             ws.cell(row=r, column=1).value = f"={val_fat}*A3"
             # Fitas de borda: col P (15) → coluna B (2) | col Q (16) → coluna E (5)
-            font_fita = Font(name="Arial", size=28, bold=True)
+            font_fita = Font(name="Arial", size=12, bold=True)
             # Fitas de borda: aplicar para normais e migrados
             # Nota: openpyxl grava '-' e '=' como texto automaticamente (não há risco de fórmula)
             if fita_b:
@@ -269,7 +269,7 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             row_idx += 1
     
     escrever_seguro(ws, f"A{l_obs}", f"PROJETO DE REFERÊNCIA: {id_proj}", Alignment(horizontal='left'))
-    ws[f"A{l_obs}"].font = Font(name='Arial Black', size=22, bold= True)
+    ws[f"A{l_obs}"].font = Font(name='Arial Black', size=14, bold= True)
     
     nome_base_limpo = re.sub(r'[\\/*?:\u0022<>|]', '', tit).strip()[:120]
     caminho = os.path.join(pasta, f"{nome_base_limpo}.xlsm")
