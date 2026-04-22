@@ -140,8 +140,13 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     fill_erro = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
     font_botao = Font(name='Arial', color='FFFFFF', bold=True, size=10)
     font_veio = Font(name='Arial', color='FFFFFF', bold=True, size=8)
-    font_arial_14 = Font(name='Arial', size=10)
-    font_arial_14_bold = Font(name='Arial', size=10, bold=True)
+    font_arial_12 = Font(name='Arial', size=12)
+    font_arial_12_bold = Font(name='Arial', size=12, bold=True)
+    
+    # NOVAS FONTES ADICIONADAS AQUI
+    font_material = Font(name='Arial', size=8)
+    font_processo = Font(name='Arial', size=8)
+    
     align_botao = Alignment(horizontal='center', vertical='center')
 
     cod_p, acab_p, desc_p = limpar(pai[1]), limpar(pai[2]), limpar(pai[3])
@@ -150,11 +155,11 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     
     tratar_cabecalho_a1(ws, id_proj)
     escrever_seguro(ws, 'B3', tit)
-    ws['B3'].font = font_arial_14_bold
+    ws['B3'].font = font_arial_12_bold
     
     try: ws['A3'].value = float(str(qtd_tot).replace(',', '.'))
     except: ws['A3'].value = qtd_tot
-    ws['A3'].font = font_arial_14
+    ws['A3'].font = font_arial_12
     
     ws['M2'].value = datetime.now().strftime('%d/%m/%Y')
     ws['M2'].font = Font(name='Arial1', size=12)
@@ -244,7 +249,11 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             else:
                 d_l_final = d_l
             ws.cell(row=r, column=12).value = d_l_final
-            ws.cell(row=r, column=9).value = limpar_material_rigoroso(m_l)
+            
+            # ATRIBUIÇÃO DA FONTE 8 PARA MATERIAL (COLUNA 9)
+            c_mat = ws.cell(row=r, column=9)
+            c_mat.value = limpar_material_rigoroso(m_l)
+            c_mat.font = font_material
 
             if is_mig: ws.cell(row=r, column=10).value = veio
             else:
@@ -252,7 +261,11 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 if "KRION" in txt and str(converter_para_numero(item.get(12, ""))) == "3": tem_v = True
                 if tem_v: ws.cell(row=r, column=10).value = 1
             
-            ws.cell(row=r, column=11).value = fita
+            # ATRIBUIÇÃO DA FONTE 9 PARA PROCESSO (COLUNA 11)
+            c_proc = ws.cell(row=r, column=11)
+            c_proc.value = fita
+            c_proc.font = font_processo
+            
             # col 13: código do item — pode ser numérico ou texto (ex: 'PÇ 1')
             _cod_raw = item.get(1, "")
             _cod_num = converter_para_numero(_cod_raw)
