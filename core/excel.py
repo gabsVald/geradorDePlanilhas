@@ -25,7 +25,7 @@ def buscar_valor_valido(item, indices):
                 if num and num > 0:
                     return num
     return 0
-#
+
 def escrever_seguro(ws, coord, valor, alinhamento=None):
     try:
         cell = ws[coord]
@@ -143,11 +143,11 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     font_arial_12 = Font(name='Arial', size=12)
     font_arial_12_bold = Font(name='Arial', size=12, bold=True)
     
-    # NOVAS FONTES ADICIONADAS AQUI
     font_material = Font(name='Arial', size=8)
-    font_processo = Font(name='Arial', size=8)
+    font_processo = Font(name='Arial', size=9)
     
     align_botao = Alignment(horizontal='center', vertical='center')
+    align_centro = Alignment(horizontal='center', vertical='center') # ALINHAMENTO AO CENTRO
 
     cod_p, acab_p, desc_p = limpar(pai[1]), limpar(pai[2]), limpar(pai[3])
     tit_base = f"{cod_p}_{acab_p.strip(' _-')} - {desc_p}" if acab_p.strip(' _-') else f"{cod_p} - {desc_p}"
@@ -171,6 +171,11 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
     for b in blocos:
         bloco_e_prensado = (b['tipo'] == 'prensado' or pai_is_prensado)
         
+        # --- ORDENAÇÃO POR ESPESSURA (Apenas itens normais, Crescente) ---
+        if b['tipo'] == 'normal':
+            b['itens'].sort(key=lambda i: buscar_valor_valido(i, [12, 13]))
+        # -----------------------------------------------------------------
+
         if b['tipo'] == 'prensado':
             ws.row_dimensions[row_idx].height = 25.5
             ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=13)
@@ -186,7 +191,6 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             if is_mig:
                 d_l, m_l = item['desc_orig'], item['mat_orig']
                 fita, veio = str(item['fita_orig']), item['veio_orig']
-                # Fitas de borda do ODS: col1=lateral(B), col4=topo(E)
                 fita_b = item.get('fita_lat')  # '-' ou '=' ou None
                 fita_e = item.get('fita_top')  # '-' ou '=' ou None
                 txt = f"{d_l} {m_l}".upper()
@@ -194,9 +198,8 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 txt = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
                 if any(m in txt for m in mat_esp): d_l = str(limpar(item.get(14, "")))
-                # Lê os valores brutos das colunas P (15) e Q (16) do CSV
-                fita_col_b = str(limpar(item.get(15, "")))  # col P → coluna B da planilha
-                fita_col_e = str(limpar(item.get(16, "")))  # col Q → coluna E da planilha
+                fita_col_b = str(limpar(item.get(15, "")))  
+                fita_col_e = str(limpar(item.get(16, "")))  
                 fita_b = fita_col_b if fita_col_b in ['-', '='] else None
                 fita_e = fita_col_e if fita_col_e in ['-', '='] else None
                 _madeira_bruta = any(m in txt for m in ["MADEIRA BRUTA PINUS", "MADEIRA BRUTA TAUARI"])
@@ -213,36 +216,28 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             plus = 5 if (any(m in txt for m in mat_esp) and not is_mig and not bloco_e_prensado) else 0
             val_fat = float(item.get('q_unitaria_fatorada', 0))
             
-            # --- LÓGICA MULTI-COLUNA ROBUSTA (Correção do Acrílico) ---
-            # Comprimento: Prioridade Col 15 (FB) -> Col 8 (I) -> Col 9 (J)
             v_c = buscar_valor_valido(item, [15, 8, 9])
-            # Largura: Prioridade Col 16 (FB) -> Col 10 (K) -> Col 11 (L)
             v_l = buscar_valor_valido(item, [16, 10, 11])
-            # Altura: Prioridade Col 12 (M) -> Col 13 (N)
             v_a = buscar_valor_valido(item, [12, 13])
 
             if v_c > 0: v_c += plus
             if v_l > 0: v_l += plus
             
             ws.cell(row=r, column=1).value = f"={val_fat}*A3"
-            # Fitas de borda: col P (15) → coluna B (2) | col Q (16) → coluna E (5)
+            
             font_fita = Font(name="Arial", size=12, bold=True)
-            # Fitas de borda: aplicar para normais e migrados
-            # Nota: openpyxl grava '-' e '=' como texto automaticamente (não há risco de fórmula)
             if fita_b:
                 c = ws.cell(row=r, column=2)
                 c.value, c.font = fita_b, font_fita
-                c.data_type = 's'  # força string, evita interpretação como fórmula
+                c.data_type = 's'  
             if fita_e:
                 c = ws.cell(row=r, column=5)
                 c.value, c.font = fita_e, font_fita
-                c.data_type = 's'  # força string, evita interpretação como fórmula
+                c.data_type = 's'  
             ws.cell(row=r, column=3).value = v_c
             ws.cell(row=r, column=6).value = v_l
             ws.cell(row=r, column=8).value = v_a
-            # ---------------------------------------------------------
 
-            # Dentro de prensado: descrição é substituída pelas medidas (CxLxE)
             if bloco_e_prensado and not is_mig:
                 _suf_itens = _sufixo_dimensional(b['itens'], b.get('prensado_info', pai))
                 d_l_final = _suf_itens.strip() if _suf_itens else d_l
@@ -250,10 +245,10 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 d_l_final = d_l
             ws.cell(row=r, column=12).value = d_l_final
             
-            # ATRIBUIÇÃO DA FONTE 8 PARA MATERIAL (COLUNA 9)
-            c_mat = ws.cell(row=r, column=9)
-            c_mat.value = limpar_material_rigoroso(m_l)
-            c_mat.font = font_material
+            # ATRIBUIÇÃO DA FONTE 8 E ALINHAMENTO AO CENTRO PARA MATERIAL (COLUNA 9)
+            ws.cell(row=r, column=9).value = limpar_material_rigoroso(m_l)
+            ws.cell(row=r, column=9).font = font_material
+            ws.cell(row=r, column=9).alignment = align_centro
 
             if is_mig: ws.cell(row=r, column=10).value = veio
             else:
@@ -261,12 +256,11 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 if "KRION" in txt and str(converter_para_numero(item.get(12, ""))) == "3": tem_v = True
                 if tem_v: ws.cell(row=r, column=10).value = 1
             
-            # ATRIBUIÇÃO DA FONTE 9 PARA PROCESSO (COLUNA 11)
-            c_proc = ws.cell(row=r, column=11)
-            c_proc.value = fita
-            c_proc.font = font_processo
+            # ATRIBUIÇÃO DA FONTE 9 E ALINHAMENTO AO CENTRO PARA PROCESSO (COLUNA 11)
+            ws.cell(row=r, column=11).value = fita
+            ws.cell(row=r, column=11).font = font_processo
+            ws.cell(row=r, column=11).alignment = align_centro
             
-            # col 13: código do item — pode ser numérico ou texto (ex: 'PÇ 1')
             _cod_raw = item.get(1, "")
             _cod_num = converter_para_numero(_cod_raw)
             ws.cell(row=r, column=13).value = _cod_num if _cod_num is not None else limpar(_cod_raw) or None
