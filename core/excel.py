@@ -61,7 +61,7 @@ def tratar_cabecalho_a1(ws, id_projeto):
             path = resource_path(f"logos/{arq}.png")
             if Path(path).exists():
                 img = OpenpyxlImage(path)
-                img.width, img.height = 152, 42
+                img.width, img.height = 151, 43
                 ws.row_dimensions[1].height = 33
                 ws.add_image(img, 'A1')
                 return
