@@ -41,7 +41,8 @@ def converter_para_numero(valor, retornar_marcador=False):
 def limpar_material_rigoroso(texto):
     """
     Limpa a string de material para exibição na planilha.
-    Remove: ORIG, ESS, '=', dimensões completas, dimensões truncadas e traços.
+    Remove: ORIG, ESS, '=', dimensões completas (com ponto ou vírgula), 
+    dimensões truncadas e traços.
     """
     if not texto: return ""
     t = str(texto).upper()
@@ -50,18 +51,20 @@ def limpar_material_rigoroso(texto):
     t = re.sub(r'\b(ORIG|ESS)\b', '', t)
     t = t.replace('=', '')
     
-    # 2. Remove medidas completas, inclusive com hifens inseridos por erro (ex: 440X-260X15 ou 15,5X20,5)
-    # Permite casas decimais, espaços variáveis e hifens opcionais logo após o X
-    t = re.sub(r'\b\d+(?:,\d+)?\s*[xX]\s*[-]?\s*\d+(?:,\d+)?(?:\s*[xX]\s*[-]?\s*\d+(?:,\d+)?)?\b', '', t)
+    # 2. Remove medidas completas, aceitando ponto (.) ou vírgula (,) como decimais
+    # Ex: 254.7X159.2X18 ou 254,7X159,2X18
+    # Também trata hifens de erro após o X (ex: 440X-260X15)
+    patrao_medida = r'\b\d+(?:[.,]\d+)?\s*[xX]\s*[-]?\s*\d+(?:[.,]\d+)?(?:\s*[xX]\s*[-]?\s*\d+(?:[.,]\d+)?)?\b'
+    t = re.sub(patrao_medida, '', t)
     
-    # 3. Remove pedaços de medida truncados (ex: "440X " ou "15X")
-    t = re.sub(r'\b\d+\s*[xX]\b', '', t)
+    # 3. Remove pedaços de medida truncados que contenham decimais (ex: "254.7X" ou "254,7X")
+    t = re.sub(r'\b\d+(?:[.,]\d+)?\s*[xX]\b', '', t)
     
-    # 4. Remove sufixos de espessura (ex: 15MM ou 15 MM)
-    t = re.sub(r'\b\d+\s*MM\b', '', t)
+    # 4. Remove sufixos de espessura (ex: 18MM ou 18.5MM)
+    t = re.sub(r'\b\d+(?:[.,]\d+)?\s*MM\b', '', t)
     
     # 5. Remove hifens seguidos de números no final da string (ex: " - 15")
-    t = re.sub(r'-\s*\d+\s*$', '', t)
+    t = re.sub(r'-\s*\d+(?:[.,]\d+)?\s*$', '', t)
     
     # 6. Remove hifens soltos, no início ou no final da string
     t = re.sub(r'^\s*-\s*', '', t)
@@ -70,7 +73,7 @@ def limpar_material_rigoroso(texto):
     # 7. Remove hifens isolados no meio do texto que ficaram vazios de ambos os lados
     t = re.sub(r'\s+-\s+', ' ', t)
     
-    # 8. Remove espaços múltiplos para evitar colunas dessincronizadas visualmente
+    # 8. Limpeza final de espaços múltiplos
     t = re.sub(r'\s+', ' ', t)
     
     return t.strip().strip('-').strip()
