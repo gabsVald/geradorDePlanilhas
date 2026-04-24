@@ -12,12 +12,21 @@ def resource_path(relative_path):
     return str(Path(os.getcwd()) / relative_path)
 
 def limpar(val):
-    """Limpa strings de dados vindos do Excel/Clipboard."""
+    """
+    Limpa dados vindos do Excel/Clipboard de forma segura.
+    Trata None, Booleans e Strings.
+    """
     if val is None: 
         return ""
+    
+    # Se for Booleano (True/False), converte para string antes de qualquer coisa
+    if isinstance(val, bool):
+        val = str(val)
+        
     v = str(val).strip()
     if v.endswith('.0'): 
         v = v[:-2]
+        
     return v if v.lower() not in ['nan', 'none', 'null', ''] else ""
 
 def converter_para_numero(valor, retornar_marcador=False):
@@ -41,8 +50,8 @@ def converter_para_numero(valor, retornar_marcador=False):
 def limpar_material_rigoroso(texto):
     """
     Limpa a string de material para exibição na planilha.
-    Remove: ORIG, ESS, '=', dimensões completas (com ponto ou vírgula), 
-    dimensões truncadas e traços.
+    Remove: ORIG, ESS, '=', dimensões completas, dimensões truncadas,
+    sufixos, parênteses vazios e traços residuais.
     """
     if not texto: return ""
     t = str(texto).upper()
@@ -51,29 +60,30 @@ def limpar_material_rigoroso(texto):
     t = re.sub(r'\b(ORIG|ESS)\b', '', t)
     t = t.replace('=', '')
     
-    # 2. Remove medidas completas, aceitando ponto (.) ou vírgula (,) como decimais
-    # Ex: 254.7X159.2X18 ou 254,7X159,2X18
-    # Também trata hifens de erro após o X (ex: 440X-260X15)
+    # 2. Remove medidas completas, aceitando ponto ou vírgula
     patrao_medida = r'\b\d+(?:[.,]\d+)?\s*[xX]\s*[-]?\s*\d+(?:[.,]\d+)?(?:\s*[xX]\s*[-]?\s*\d+(?:[.,]\d+)?)?\b'
     t = re.sub(patrao_medida, '', t)
     
-    # 3. Remove pedaços de medida truncados que contenham decimais (ex: "254.7X" ou "254,7X")
+    # 3. Remove pedaços de medida truncados (ex: "254.7X")
     t = re.sub(r'\b\d+(?:[.,]\d+)?\s*[xX]\b', '', t)
     
-    # 4. Remove sufixos de espessura (ex: 18MM ou 18.5MM)
+    # 4. Remove sufixos de espessura/comprimento (ex: 18MM, 3100MM)
     t = re.sub(r'\b\d+(?:[.,]\d+)?\s*MM\b', '', t)
     
-    # 5. Remove hifens seguidos de números no final da string (ex: " - 15")
+    # 5. NOVO: Remove parênteses vazios ou contendo apenas espaços que sobraram após as limpezas acima
+    t = re.sub(r'\(\s*\)', '', t)
+    
+    # 6. Remove hifens seguidos de números no final da string (ex: " - 15")
     t = re.sub(r'-\s*\d+(?:[.,]\d+)?\s*$', '', t)
     
-    # 6. Remove hifens soltos, no início ou no final da string
+    # 7. Remove hifens soltos, no início ou no final da string
     t = re.sub(r'^\s*-\s*', '', t)
     t = re.sub(r'\s*-\s*$', '', t)
     
-    # 7. Remove hifens isolados no meio do texto que ficaram vazios de ambos os lados
+    # 8. Remove hifens isolados no meio do texto que ficaram vazios de ambos os lados
     t = re.sub(r'\s+-\s+', ' ', t)
     
-    # 8. Limpeza final de espaços múltiplos
+    # 9. Limpeza final de espaços múltiplos
     t = re.sub(r'\s+', ' ', t)
     
     return t.strip().strip('-').strip()
