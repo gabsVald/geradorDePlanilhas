@@ -52,7 +52,7 @@ def limpar_material_rigoroso(texto):
     """
     Limpa a string de material para exibição na planilha.
     Remove: ORIG, ESS, '=', dimensões completas, dimensões truncadas,
-    sufixos, parênteses vazios e traços residuais.
+    sufixos, parênteses vazios e traços residuais. Preserva medidas de chapa.
     """
     if not texto: return ""
     t = str(texto).upper()
@@ -68,23 +68,26 @@ def limpar_material_rigoroso(texto):
     # 3. Remove pedaços de medida truncados (ex: "254.7X")
     t = re.sub(r'\b\d+(?:[.,]\d+)?\s*[xX]\b', '', t)
     
-    # 4. Remove sufixos de espessura/comprimento (ex: 18MM, 3100MM)
+    # 4. NOVO: Preserva números de medidas em parênteses, removendo apenas "MM" (ex: (3100MM) -> (3100))
+    t = re.sub(r'\(\s*(\d+(?:[.,]\d+)?)\s*MM\s*\)', r'(\1)', t)
+    
+    # 5. Remove sufixos de espessura/comprimento órfãos (ex: 18MM) que não estão em parênteses
     t = re.sub(r'\b\d+(?:[.,]\d+)?\s*MM\b', '', t)
     
-    # 5. NOVO: Remove parênteses vazios ou contendo apenas espaços que sobraram após as limpezas acima
+    # 6. Remove parênteses vazios ou contendo apenas espaços
     t = re.sub(r'\(\s*\)', '', t)
     
-    # 6. Remove hifens seguidos de números no final da string (ex: " - 15")
+    # 7. Remove hifens seguidos de números no final da string (ex: " - 15")
     t = re.sub(r'-\s*\d+(?:[.,]\d+)?\s*$', '', t)
     
-    # 7. Remove hifens soltos, no início ou no final da string
+    # 8. Remove hifens soltos, no início ou no final da string
     t = re.sub(r'^\s*-\s*', '', t)
     t = re.sub(r'\s*-\s*$', '', t)
     
-    # 8. Remove hifens isolados no meio do texto que ficaram vazios de ambos os lados
+    # 9. Remove hifens isolados no meio do texto que ficaram vazios de ambos os lados
     t = re.sub(r'\s+-\s+', ' ', t)
     
-    # 9. Limpeza final de espaços múltiplos
+    # 10. Limpeza final de espaços múltiplos
     t = re.sub(r'\s+', ' ', t)
     
     return t.strip().strip('-').strip()
