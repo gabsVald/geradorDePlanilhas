@@ -25,7 +25,7 @@ def buscar_valor_valido(item, indices):
                 if num and num > 0:
                     return num
     return 0
-#
+
 def escrever_seguro(ws, coord, valor, alinhamento=None):
     try:
         cell = ws[coord]
@@ -186,18 +186,21 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
         for item in b['itens']:
             r, is_mig = row_idx, item.get('is_migrado', False)
             desc_f = str(limpar(item.get(3, "")))
+            
             if is_mig:
-                d_l, m_l = item['desc_orig'], item['mat_orig']
-                fita, veio = str(item['fita_orig']), item['veio_orig']
-                fita_b, fita_e = None, None  # migrados não reescrevem colunas B/E
+                d_l = item['desc_orig']
+                m_l = item['mat_orig']
+                fita = str(item['fita_orig'])
+                veio = converter_para_numero(item.get('veio_orig'))
+                fita_b = item.get('fita_lat')
+                fita_e = item.get('fita_top')
                 txt = f"{d_l} {m_l}".upper()
             else:
                 txt = f"{str(item.get(2, ''))} {desc_f} {str(item.get(14, ''))}".upper()
                 d_l, m_l = (desc_f.split(" - ", 1) if " - " in desc_f else ("-", desc_f))
                 if any(m in txt for m in mat_esp): d_l = str(limpar(item.get(14, "")))
-                # Lê os valores brutos das colunas P (15) e Q (16) do CSV
-                fita_col_b = str(limpar(item.get(15, "")))  # col P → coluna B da planilha
-                fita_col_e = str(limpar(item.get(16, "")))  # col Q → coluna E da planilha
+                fita_col_b = str(limpar(item.get(15, "")))
+                fita_col_e = str(limpar(item.get(16, "")))
                 fita_b = fita_col_b if fita_col_b in ['-', '='] else None
                 fita_e = fita_col_e if fita_col_e in ['-', '='] else None
                 _madeira_bruta = any(m in txt for m in ["MADEIRA BRUTA PINUS", "MADEIRA BRUTA TAUARI"])
@@ -210,7 +213,12 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
                 else:
                     fita = "SEC"
                 veio = None
-
+                
+            if bloco_e_prensado and not is_mig:
+                _suf = _sufixo_dimensional(b['itens'], b.get('prensado_info', pai))
+                d_l_final = _suf.strip() if _suf else d_l
+            else:
+                d_l_final = d_l
             # FORMICA (+25mm) | especiais normais (+5mm) | outros (0)
             _is_formica = not is_mig and not bloco_e_prensado and ('FORM' in txt or 'FORMICA' in txt)
             if _is_formica:
@@ -220,6 +228,8 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             else:
                 plus = 0
             val_fat = float(item.get('q_unitaria_fatorada', 0))
+            ws.cell(row=r, column=12).value = d_l_final
+            ws.cell(row=r, column=11).value = fita
             
             # --- LÓGICA MULTI-COLUNA ROBUSTA (Correção do Acrílico) ---
             # Comprimento: Prioridade Col 15 (FB) -> Col 8 (I) -> Col 9 (J)
@@ -233,15 +243,20 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             if v_l > 0: v_l += plus
             
             ws.cell(row=r, column=1).value = f"={val_fat}*A3"
+            
             # Fitas de borda: col P (15) → coluna B (2) | col Q (16) → coluna E (5)
             font_fita = Font(name="Arial", size=12, bold=True)
-            if not is_mig:
-                if fita_b:
-                    c = ws.cell(row=r, column=2)
-                    c.value, c.font = fita_b, font_fita
-                if fita_e:
-                    c = ws.cell(row=r, column=5)
-                    c.value, c.font = fita_e, font_fita
+            
+            # Agora escreve as fitas de borda independentemente de ser item migrado ou não
+            if fita_b:
+                c = ws.cell(row=r, column=2)
+                c.value, c.font = fita_b, font_fita
+                c.data_type = 's' # Força string para não interpretar "=" como fórmula
+            if fita_e:
+                c = ws.cell(row=r, column=5)
+                c.value, c.font = fita_e, font_fita
+                c.data_type = 's' # Força string
+            
             ws.cell(row=r, column=3).value = v_c
             ws.cell(row=r, column=6).value = v_l
             ws.cell(row=r, column=8).value = v_a
@@ -263,36 +278,33 @@ def gerar_arquivo_excel(pai, blocos, id_proj, qtd_tot, molde, pasta, pai_is_pren
             ws.cell(row=r, column=9).font = font_material
             ws.cell(row=r, column=9).alignment = align_centro
 
-            if is_mig: ws.cell(row=r, column=10).value = veio
+            # Se for item migrado, garante a injeção do inteiro 1, se não, cai na regra de "materiais com veio"
+            if is_mig: ws.cell(row=r, column=10).value = 1 if veio == 1 else None
             else:
-                tem_v = any(m in txt for m in mat_veio)
-                if "KRION" in txt and str(converter_para_numero(item.get(12, ""))) == "3": tem_v = True
+                tem_v = any(m in txt for m in mat_veio) or ("KRION" in txt and str(converter_para_numero(item.get(12, ""))) == "3")
                 if tem_v: ws.cell(row=r, column=10).value = 1
             
-            ws.cell(row=r, column=11).value = fita
-            ws.cell(row=r, column=11).font = font_processo
-            ws.cell(row=r, column=11).alignment = align_centro
-            # col 13: código do item — pode ser numérico ou texto (ex: 'PÇ 1')
+            ws.cell(row=r, column=11).value, ws.cell(row=r, column=11).font, ws.cell(row=r, column=11).alignment = fita, font_processo, align_centro
+            
+            # -------------------------------------------------------------
+            # CORREÇÃO AQUI: Avalia o Código (Coluna 13) sem remover Unidades
+            # -------------------------------------------------------------
             _cod_raw = item.get(1, "")
-            _cod_num = converter_para_numero(_cod_raw)
+            _cod_num = converter_para_numero(_cod_raw, remover_unidades=False)
             ws.cell(row=r, column=13).value = _cod_num if _cod_num is not None else limpar(_cod_raw) or None
             
             if ws.cell(row=r, column=10).value == 1:
                 cv = ws.cell(row=r, column=15)
                 cv.value, cv.fill, cv.font, cv.alignment = "⇄", fill_botao, font_veio, align_botao
-            
             if not bloco_e_prensado and not any(m in txt for m in mat_esp):
                 cn = ws.cell(row=r, column=14)
                 cn.value, cn.fill, cn.font, cn.alignment = "+5", fill_botao, font_botao, align_botao
-            
             row_idx += 1
     
     escrever_seguro(ws, f"A{l_obs}", f"PROJETO DE REFERÊNCIA: {id_proj}", Alignment(horizontal='left'))
     ws[f"A{l_obs}"].font = Font(name='Arial Black', size=14, bold= True)
-    
     nome_base_limpo = re.sub(r'[\\/*?:\u0022<>|]', '', tit).strip()[:120]
     caminho = os.path.join(pasta, f"{nome_base_limpo}.xlsm")
-    
     caminho_tmp = caminho + ".tmp"
     try:
         wb.save(caminho_tmp)

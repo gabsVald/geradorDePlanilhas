@@ -29,14 +29,15 @@ def limpar(val):
         
     return v if v.lower() not in ['nan', 'none', 'null', ''] else ""
 
-def converter_para_numero(valor, retornar_marcador=False):
+def converter_para_numero(valor, retornar_marcador=False, remover_unidades=True):
     """Converte strings para inteiros arredondados. Evita erros de str > int."""
     limpo = limpar(valor)
     if not limpo: 
         return "" if retornar_marcador else None
     
-    # Limpeza de unidades comuns que vem do PDM ou planilhas antigas
-    limpo = re.sub(r'(?i)\s*(pç|pc|un|und|unid|unidade)\.*', '', limpo)
+    # Limpeza de unidades comuns; pode ser desativado para Códigos de item alfanuméricos
+    if remover_unidades:
+        limpo = re.sub(r'(?i)\s*(pç|pc|un|und|unid|unidade)\.*', '', limpo)
     
     if limpo in ["-", "="]: 
         return limpo if retornar_marcador else None
