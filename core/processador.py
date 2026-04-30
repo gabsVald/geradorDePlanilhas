@@ -22,6 +22,7 @@ import os
 import io
 import re
 import shutil
+import time                 # Adicionado para o Retry do Clipboard
 
 import pandas as pd         # Leitura do clipboard (TSV) e manipulação de DataFrames
 from pathlib import Path
@@ -44,6 +45,28 @@ _PASTA_ANTIGOS = Path(REGRAS["diretorios"]["antigos"])  # X:\Egpe\ANTIGOS - NÃO
 _MARCADOR_2026 = "PLANOS DE CORTE 2026"                 # Substring usada para distinguir arquivos novos dos antigos
 
 
+# ===== FUNÇÃO DE LEITURA BLINDADA DO CLIPBOARD =====
+
+def _ler_clipboard_seguro(tentativas=5, delay=0.2):
+    """
+    Tenta ler a área de transferência múltiplas vezes.
+    Previne o erro [WinError 0] OpenClipboard causado por concorrência de processos (ex: Excel bloqueando a RAM).
+    """
+    ultimo_erro = None
+    for i in range(tentativas):
+        try:
+            return pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
+        except Exception as e:
+            ultimo_erro = e
+            time.sleep(delay)
+            
+    raise Exception(
+        f"O Windows bloqueou a leitura (Área de Transferência em uso por outro programa).\n"
+        f"Tente fazer Ctrl+C novamente e aguarde meio segundo antes de clicar.\n"
+        f"Erro técnico: {ultimo_erro}"
+    )
+
+
 # ===== FUNÇÕES DE VALIDAÇÃO DE ITENS =====
 
 def f_valido(f):
@@ -57,12 +80,6 @@ def f_valido(f):
            - "LAMINADO FORM": sempre passa
            - Materiais especiais (+5mm) ou código TS: passa
       4. Código deve começar com prefixo válido ("11" ou "15") → inclui
-
-    Parâmetros:
-        f (Series|dict): Linha do DataFrame com dados do item.
-
-    Retorna:
-        bool: True se o item deve ser processado, False se deve ser ignorado.
     """
     c  = str(limpar(f.get(1, "")))   # Código do item (col 1)
     a  = str(f.get(2, "")).upper()   # Acabamento/descrição resumida (col 2)
@@ -76,9 +93,6 @@ def f_valido(f):
        any(x in d  for x in filtros["materiais_ignorados"])  or \
        any(x in mc for x in filtros["materiais_ignorados"]):
         return False
-
-    # A antiga regra do "*" foi eliminada daqui, pois o asterisco é 
-    # higienizado na raiz durante a leitura do clipboard.
 
     # Regra 2: MP com prefixo bloqueado (ex: 9172xx = serviços externos)
     if mc.startswith(tuple(filtros["mp_iniciais_ignoradas"])):
@@ -96,17 +110,6 @@ def f_valido(f):
 def is_prensado(r):
     """
     Verifica se uma linha do DataFrame representa um item "prensado".
-
-    Gatilhos configuráveis em regras.json (prensados):
-      - descricoes_gatilho: palavras na descrição (ex: "PRENSADO")
-      - codigos_gatilho: códigos específicos (ex: "1152032")
-      - acabamentos_gatilho: acabamentos especiais (ex: "PRLA")
-
-    Parâmetros:
-        r (Series|dict): Linha do DataFrame.
-
-    Retorna:
-        bool: True se o item é um bloco prensado.
     """
     desc = str(r.get(3, "")).upper()
     acab = str(r.get(2, "")).upper()
@@ -221,12 +224,11 @@ def processar_clipboard(is_teste=False):
     """
     Ponto de entrada principal. Lê o clipboard e gera as planilhas de corte.
     """
-    # ===== LEITURA E VALIDAÇÃO DO CLIPBOARD =====
-    df = pd.read_clipboard(sep='\t', header=None, dtype=str).fillna('')
+    # ===== LEITURA E VALIDAÇÃO DO CLIPBOARD COM RETRY =====
+    df = _ler_clipboard_seguro(tentativas=5, delay=0.2)
 
     # HIGIENIZAÇÃO DE ACABAMENTOS (Regra do Asterisco)
-    # Garante que peças com '*' no acabamento não criem planilhas separadas (pais promovidos)
-    # e não sujem o título do arquivo final.
+    # Garante que peças com '*' no acabamento não criem planilhas separadas
     if 2 in df.columns:
         df[2] = df[2].apply(lambda x: x.replace('*', '').strip() if '*' in x else x)
 
