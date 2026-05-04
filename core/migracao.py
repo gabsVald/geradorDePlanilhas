@@ -169,7 +169,7 @@ def extrair_dados_linha_inteligente(linha_raw, a3_valor, cod_fallback=''):
     veio_val = str(linha[9 + offset]).strip().upper()  # Col J: veio ou processo
 
     # Termos que indicam que a coluna contém o PROCESSO (não o veio)
-    termos_proc = ['SEC', 'SEC-LAM', 'SERRA', 'SERRA-LAM', 'LAM', 'FITA', 'BORDA', 'BORD', 'USI', 'USINAGEM', 'CRU']
+    termos_proc = ['SEC', 'SEC-LAM', 'SERRA', 'SERRA-LAM', 'LAM', 'FITA', 'BORDA', 'BORD', 'USI', 'USINAGEM', 'PRENSA', 'CNC', 'MAR']
     is_proc = lambda x: any(t in x.upper() for t in termos_proc)
 
     fita = ""
