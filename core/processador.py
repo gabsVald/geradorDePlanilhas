@@ -21,6 +21,7 @@ Módulos utilizados:
 import os
 import io
 import re
+import json
 import shutil
 import time                 # Adicionado para o Retry do Clipboard
 
@@ -43,6 +44,68 @@ from core.excel import gerar_arquivo_excel    # Gera o .xlsm final
 _RAIZ          = Path(REGRAS["diretorios"]["raiz"])     # .../PLANOS DE CORTE 2026
 _PASTA_ANTIGOS = Path(REGRAS["diretorios"]["antigos"])  # X:\Egpe\ANTIGOS - NÃO USAR
 _MARCADOR_2026 = "PLANOS DE CORTE 2026"                 # Substring usada para distinguir arquivos novos dos antigos
+
+
+# ===== MAPEAMENTO MP → MATERIAL (para enriquecer materiais migrados) =====
+# Carregado uma vez — permite substituir nomes abreviados/errados dos arquivos antigos
+_MAP_MP_PATH = Path(__file__).parent.parent / "mapeamento.json"
+try:
+    with open(_MAP_MP_PATH, encoding='utf-8') as _f:
+        _MAP_MP = json.load(_f)
+except Exception:
+    _MAP_MP = {}  # Fallback silencioso
+
+
+def _atualizar_materiais_migrados(blocos_mig, df, nv_p, mp_pai):
+    """
+    Atualiza mat_orig dos itens migrados usando MP do CSV + mapeamento.json.
+
+    Estratégia em ordem de prioridade:
+      1. Pai folha com MP direto no CSV (ex: 1145717 com MP=915257)
+         → aplica o material mapeado a todos os itens do bloco
+      2. Pai assembly sem MP direto
+         → cruza filhos do CSV pela ESPESSURA (não muda com margens de corte)
+         → atualiza cada item individualmente
+
+    Parâmetros:
+        blocos_mig (list): Blocos extraídos do arquivo antigo.
+        df (DataFrame): DataFrame completo do clipboard.
+        nv_p (str): Nível hierárquico do pai no clipboard.
+        mp_pai (str): Código MP do pai (col 14 da linha pai no clipboard).
+    """
+    # Caso 1: pai folha — MP do pai mapeia diretamente para o material
+    if mp_pai and mp_pai in _MAP_MP:
+        mat_novo = _MAP_MP[mp_pai]
+        for bloco in blocos_mig:
+            for item in bloco['itens']:
+                item['mat_orig'] = mat_novo
+        return
+
+    # Caso 2: pai assembly — cruza filhos do CSV pela espessura
+    mp_por_esp = {}  # {espessura_int: nome_material_mapeado}
+    mask_filhos = df[0].str.startswith(nv_p + ".")
+    for _, filho_row in df[mask_filhos].iterrows():
+        mp = limpar(filho_row[14]) if df.shape[1] > 14 else ''
+        if mp and mp in _MAP_MP:
+            try:
+                esp = int(converter_para_numero(filho_row[12]) or 0)
+                if esp > 0:
+                    mp_por_esp[esp] = _MAP_MP[mp]
+            except Exception:
+                pass
+
+    if not mp_por_esp:
+        return  # Nenhum MP reconhecível nos filhos — mantém originais
+
+    # Atualiza cada item migrado pela sua espessura
+    for bloco in blocos_mig:
+        for item in bloco['itens']:
+            try:
+                esp_item = int(converter_para_numero(item.get(12, 0)) or 0)
+                if esp_item in mp_por_esp:
+                    item['mat_orig'] = mp_por_esp[esp_item]
+            except Exception:
+                pass
 
 
 # ===== FUNÇÃO DE LEITURA BLINDADA DO CLIPBOARD =====
@@ -363,6 +426,9 @@ def processar_clipboard(is_teste=False):
         blocos_mig, qtd_mig = extrair_dados_migracao(str(caminho_antigo))
 
         if blocos_mig:
+            # Atualiza materiais usando MP do CSV + mapeamento.json
+            mp_pai = limpar(info['pai'][14]) if df.shape[1] > 14 else ''
+            _atualizar_materiais_migrados(blocos_mig, df, nv_p, mp_pai)
             info['blocos']      = blocos_mig
             info['qtd_p_total'] = qtd_mig
         else:

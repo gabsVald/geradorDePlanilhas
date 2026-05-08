@@ -33,16 +33,40 @@ from utils.config import REGRAS  # Dicionário global de regras (regras.json)
 from utils.helpers import limpar  # Normaliza strings vindas do Excel
 
 
-# ===== CARREGAMENTO DO MAPEAMENTO MP → MATERIAL =====
+# ===== MAPEAMENTO MP → MATERIAL =====
+# Carregado uma vez ao iniciar — mapeia código MP para nome atualizado do material
+# Ex: '915239' → 'COMPENSADO VIROLA FLEX BALCAO'
 
 _MAP_MP_PATH = Path(__file__).parent.parent / "mapeamento.json"
-
 try:
     with open(_MAP_MP_PATH, encoding='utf-8') as _f:
         _MAP_MP = json.load(_f)
     # Ex: {"915239": "COMPENSADO VIROLA FLEX BALCAO", "925324": "KRION ..."}
 except Exception:
     _MAP_MP = {}  # Fallback silencioso — o sistema continua sem mapeamento
+
+
+def _resolver_material(mat_orig: str, desc_orig: str) -> str:
+    """
+    Retorna o nome atualizado do material usando o mapeamento MP → material.
+
+    Tenta em ordem:
+      1. desc_orig como código MP direto (ex: '915239')
+      2. Fallback: mat_orig original do arquivo antigo
+
+    Parâmetros:
+        mat_orig (str): Nome do material lido diretamente do arquivo antigo.
+        desc_orig (str): Conteúdo da coluna de descrição — frequentemente contém o MP.
+
+    Retorna:
+        str: Nome do material atualizado, ou mat_orig se não encontrar no mapa.
+    """
+    # Tenta desc_orig como código MP (caso mais comum em planilhas antigas)
+    mp_candidate = str(desc_orig).strip()
+    if mp_candidate and mp_candidate in _MAP_MP:
+        return _MAP_MP[mp_candidate]
+    # Fallback: mantém o nome original do arquivo antigo
+    return mat_orig
 
 
 # ===== FUNÇÕES AUXILIARES DE DETECÇÃO =====
@@ -230,19 +254,23 @@ def extrair_dados_linha_inteligente(linha_raw, a3_valor, cod_fallback=''):
     if not cod:
         cod = cod_fallback
 
+    # Substitui o material pelo nome atualizado do mapeamento.json se o MP for reconhecido
+    # desc frequentemente contém o código MP em planilhas antigas (ex: "915239")
+    mat_resolvido = _resolver_material(mat, desc)
+
     return {
-        1:  cod,           # Código do item
-        8:  comp,          # Comprimento
-        10: larg,          # Largura
-        12: esp,           # Espessura
-        'mat_orig':           mat,       # Material original
-        'veio_orig':          veio,      # 1 = tem veio, None = sem veio
-        'fita_orig':          fita,      # Processo de corte (SEC, SEC-LAM...)
-        'fita_lat':           fita_lat,  # Fita de borda lateral ('-' ou '=')
-        'fita_top':           fita_top,  # Fita de borda topo ('-' ou '=')
-        'desc_orig':          desc,      # Descrição da peça
-        'q_unitaria_fatorada': q_unit,   # Fator unitário (quantidade por peça)
-        'is_migrado':         True       # Marca o item como migrado
+        1:  cod,            # Código do item
+        8:  comp,           # Comprimento
+        10: larg,           # Largura
+        12: esp,            # Espessura
+        'mat_orig':            mat_resolvido,  # Material atualizado via mapeamento.json
+        'veio_orig':           veio,      # 1 = tem veio, None = sem veio
+        'fita_orig':           fita,      # Processo de corte (SEC, SEC-LAM...)
+        'fita_lat':            fita_lat,  # Fita de borda lateral ('-' ou '=')
+        'fita_top':            fita_top,  # Fita de borda topo ('-' ou '=')
+        'desc_orig':           desc,      # Descrição da peça
+        'q_unitaria_fatorada': q_unit,    # Fator unitário (quantidade por peça)
+        'is_migrado':          True       # Marca o item como migrado
     }
 
 
@@ -384,7 +412,7 @@ def extrair_dados_migracao(caminho):
                 bloco_atual = {'tipo': 'prensado', 'prensado_info': {1: f_cod, 3: f_desc}, 'itens': []}
                 continue
 
-            # --- EXTRAÇÃO DO ITEM ---
+            # --- EXTRAÇÃO DO ITEM (com resolução de material via mapeamento.json) ---
             item = extrair_dados_linha_inteligente(linha, a3_valor, cod_titulo)
             if item:
                 bloco_atual['itens'].append(item)
